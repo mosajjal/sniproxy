@@ -18,11 +18,10 @@ Usage of ./sniproxy:
     	Upstream DNS IP (default "1.1.1.1")
 ```      
 
-or Use Dockerfile to build and run
+Docker/Podman
 
 ```
-docker build -t sniproxy .
-docker run -d -p 80:80 -p 443:443 -p 53:53 -v "$(pwd):/tmp/" sniproxy -domainlist /tmp/domains -publicip (YOUR Public IP)
+docker run -d -p 80:80 -p 443:443 -p 53:53 -v "$(pwd):/tmp/" quay.io/mosajjal/sniproxy -domainlist /tmp/domains -publicip (REPLACE YOUR Public IP)
 ```
 
 

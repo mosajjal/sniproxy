@@ -218,14 +218,14 @@ func startListenTCP(ip string, port int, handle func(net.Conn), term chan int) {
 
 	listener, error := net.Listen("tcp", ip+":"+strconv.Itoa(port))
 	if error != nil {
-		log.Printf("Couldn't start listening", error)
+		log.Printf("Couldn't start listening. Error: %s", error)
 		return
 	}
 	log.Printf("Started proxy on %s:%d -- listening", ip, port)
 	for {
 		connection, error := listener.Accept()
 		if error != nil {
-			log.Printf("Accept error", error)
+			log.Printf("Accept error. Error: %s", error)
 			return
 		}
 		log.Printf("From: %s", connection.RemoteAddr().String())

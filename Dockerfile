@@ -8,5 +8,5 @@ RUN go build -o main .
 CMD ["/app/main"]
 
 FROM scratch
-COPY --from=0 /app/main /main
-ENTRYPOINT ["/main"] 
+COPY --from=0 /app/main /sniproxy
+ENTRYPOINT ["/sniproxy"] 

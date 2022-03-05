@@ -48,7 +48,7 @@ func loadDomainsToList(Filename string) [][]string {
 	return lines
 }
 
-func performExternalQuery(question dns.Question, server string) *dns.Msg {
+func performExternalQuery(question dns.Question, server string) (*dns.Msg, error) {
 	c := new(dns.Client)
 	m1 := new(dns.Msg)
 	m1.Id = dns.Id()
@@ -56,17 +56,19 @@ func performExternalQuery(question dns.Question, server string) *dns.Msg {
 	m1.Question = make([]dns.Question, 1)
 	m1.Question[0] = question
 
-	in, _, _ := c.Exchange(m1, fmt.Sprintf("%s:53", server))
-	return in
+	in, _, err := c.Exchange(m1, fmt.Sprintf("%s:53", server))
+	return in, err
 }
 
 func parseQuery(m *dns.Msg, ip string) {
 	for _, q := range m.Question {
 
-		if !checkBypassDomainList(q.Name, routeDomainList) {
+		if !checkBypassDomainList(q.Name, routeDomainList) && !*allDomains {
 			log.Printf("Bypassing Traffic for %s\n", q.Name)
-			in := performExternalQuery(q, *upstreamDNS)
-
+			in, err := performExternalQuery(q, *upstreamDNS)
+			if err != nil {
+				log.Println(err)
+			}
 			m.Answer = append(m.Answer, in.Answer...)
 
 		} else {

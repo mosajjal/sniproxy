@@ -7,14 +7,18 @@ Installation
 ============
 
 ```
-Usage of ./sniproxy:
-  -bindip string
-    	Bind to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0 (default "0.0.0.0")
-  -domainlist string
-    	domain list path. eg: /tmp/domainlist.log
-  -publicip string
-    	Public IP of this server, reply address of DNS queries
-  -upstreamdns string
+Usage of sniproxy:
+  -allDomains
+    	Route all HTTP(s) traffic through the SNI proxy
+  -bindIP string
+    	Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0 (default "0.0.0.0")
+  -domainListPath string
+    	Path to the domain list. eg: /tmp/domainlist.log
+  -domainListRefreshInterval duration
+    	Interval to re-fetch the domain list (default 1m0s)
+  -publicIP string
+    	Public IP of the server, reply address of DNS queries
+  -upstreamDNS string
     	Upstream DNS IP (default "1.1.1.1")
 ```      
 

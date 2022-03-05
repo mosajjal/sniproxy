@@ -12,12 +12,12 @@ import (
 	"github.com/miekg/dns"
 )
 
-var bindIP = flag.String("bindIP", "0.0.0.0", "Bind to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
+var bindIP = flag.String("bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
 var upstreamDNS = flag.String("upstreamDNS", "1.1.1.1", "Upstream DNS IP")
-var domainListPath = flag.String("domainListPath", "", "domain list path. eg: /tmp/domainlist.log")
+var domainListPath = flag.String("domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.log")
 var domainListRefreshInterval = flag.Duration("domainListRefreshInterval", 60*time.Second, "Interval to re-fetch the domain list")
-var allDomains = flag.Bool("allDomains", false, "Do it for All Domains")
-var publicIP = flag.String("publicIP", "", "Public IP of this server, reply address of DNS queries")
+var allDomains = flag.Bool("allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
+var publicIP = flag.String("publicIP", "", "Public IP of the server, reply address of DNS queries")
 
 func handle80(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusFound)

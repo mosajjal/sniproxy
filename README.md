@@ -25,9 +25,9 @@ Usage of sniproxy:
 Docker/Podman
 
 ```
-docker run -d -p 80:80 -p 443:443 -p 53:53 -v "$(pwd):/tmp/" ghcr.io/mosajjal/sniproxy -domainlist /tmp/domains -publicip (REPLACE YOUR Public IP)
+PUB_IP=`curl ifconfig.me`
+docker run -it --rm -p 80:80 -p 443:443 -p 53:53/udp -v "$(pwd):/tmp/" ghcr.io/mosajjal/sniproxy:master -domainListPath /tmp/domains.csv -publicIP $PUB_IP
 ```
-
 
 Issue
 =====

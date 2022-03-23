@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
@@ -56,6 +57,7 @@ func loadDomainsToList(Filename string) [][]string {
 	var scanner *bufio.Scanner
 	if strings.HasPrefix(Filename, "http://") || strings.HasPrefix(Filename, "https://") {
 		log.Info("domain list is a URL, trying to fetch")
+		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 		client := http.Client{
 			CheckRedirect: func(r *http.Request, via []*http.Request) error {
 				r.URL.Opaque = r.URL.Path

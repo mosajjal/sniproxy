@@ -25,7 +25,7 @@ Usage of sniproxy:
 Docker/Podman
 
 ```
-docker run -d -p 80:80 -p 443:443 -p 53:53 -v "$(pwd):/tmp/" quay.io/mosajjal/sniproxy -domainlist /tmp/domains -publicip (REPLACE YOUR Public IP)
+docker run -d -p 80:80 -p 443:443 -p 53:53 -v "$(pwd):/tmp/" ghcr.io/mosajjal/sniproxy -domainlist /tmp/domains -publicip (REPLACE YOUR Public IP)
 ```
 
 
@@ -33,6 +33,3 @@ Issue
 =====
 
 There's no security options. so, you must use firewall(ex:iptables..).
-
-
-

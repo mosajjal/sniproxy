@@ -3,9 +3,11 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
+	"net/http"
 	"os"
 	"strings"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/miekg/dns"
 )
@@ -34,17 +36,55 @@ func checkBypassDomainList(domainName string, domainList [][]string) bool {
 	return false
 }
 
-func loadDomainsToList(Filename string) [][]string {
-	file, err := os.Open(Filename)
-	handleError(err)
-	log.Println("(re)loading File: ", Filename)
-	defer file.Close()
+// func loadDomainsToList(Filename string) [][]string {
+// 	file, err := os.Open(Filename)
+// 	handleError(err)
+// 	log.Println("(re)loading File: ", Filename)
+// 	defer file.Close()
 
+// 	var lines [][]string
+// 	scanner := bufio.NewScanner(file)
+// 	for scanner.Scan() {
+// 		lines = append(lines, strings.Split(scanner.Text(), ","))
+// 	}
+// 	return lines
+// }
+
+func loadDomainsToList(Filename string) [][]string {
+	log.Info("Loading the domain from file/url to a list")
 	var lines [][]string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		lines = append(lines, strings.Split(scanner.Text(), ","))
+	var scanner *bufio.Scanner
+	if strings.HasPrefix(Filename, "http://") || strings.HasPrefix(Filename, "https://") {
+		log.Info("domain list is a URL, trying to fetch")
+		client := http.Client{
+			CheckRedirect: func(r *http.Request, via []*http.Request) error {
+				r.URL.Opaque = r.URL.Path
+				return nil
+			},
+		}
+		resp, err := client.Get(Filename)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Info("(re)fetching URL: ", Filename)
+		defer resp.Body.Close()
+		scanner = bufio.NewScanner(resp.Body)
+
+	} else {
+		file, err := os.Open(Filename)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Info("(re)loading File: ", Filename)
+		defer file.Close()
+		scanner = bufio.NewScanner(file)
 	}
+
+	for scanner.Scan() {
+		lowerCaseLine := strings.ToLower(scanner.Text())
+		lines = append(lines, strings.Split(lowerCaseLine, ","))
+	}
+	log.Infof("%s loaded with %d lines", Filename, len(lines))
 	return lines
 }
 

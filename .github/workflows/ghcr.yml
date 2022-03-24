@@ -37,4 +37,5 @@ jobs:
         with:
           context: .
           push: true
-          tags: mosajjal/arkime-container:dev
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

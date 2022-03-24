@@ -26,7 +26,7 @@ Docker/Podman
 
 ```
 PUB_IP=`curl ifconfig.me`
-docker run -it --rm -p 80:80 -p 443:443 -p 53:53/udp -v "$(pwd):/tmp/" ghcr.io/mosajjal/sniproxy:master -domainListPath https://raw.githubusercontent.com/freedomofdevelopers/fod/master/domains -publicIP $PUB_IP
+docker run -it --rm -p 80:80 -p 443:443 -p 53:53/udp -v "$(pwd):/tmp/" ghcr.io/mosajjal/sniproxy:master -domainListPath https://raw.githubusercontent.com/mosajjal/sniproxy/master/domains.csv -publicIP $PUB_IP
 ```
 
 Issue

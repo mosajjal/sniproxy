@@ -10,6 +10,10 @@ Installation
 Usage of sniproxy:
   -allDomains
     	Route all HTTP(s) traffic through the SNI proxy
+  -bindDnsOverTcp
+    	enable DNS over TCP as well as of UDP
+  -bindDnsOverTls
+    	enable DNS over TLS as well as of UDP
   -bindIP string
     	Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0 (default "0.0.0.0")
   -domainListPath string
@@ -19,7 +23,7 @@ Usage of sniproxy:
   -publicIP string
     	Public IP of the server, reply address of DNS queries
   -upstreamDNS string
-    	Upstream DNS IP (default "1.1.1.1")
+    	Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853 (default "udp://1.1.1.1:53")
 ```      
 
 Docker/Podman

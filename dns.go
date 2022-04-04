@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -91,14 +92,22 @@ func loadDomainsToList(Filename string) [][]string {
 }
 
 func performExternalQuery(question dns.Question, server string) (*dns.Msg, error) {
-	c := new(dns.Client)
+	dnsUrl, err := url.Parse(server)
+	if err != nil {
+		log.Fatalf("Invalid upstream DNS URL: %s", server)
+	}
+
+	c := dns.Client{
+		Net: dnsUrl.Scheme,
+	}
+
 	m1 := new(dns.Msg)
 	m1.Id = dns.Id()
 	m1.RecursionDesired = true
 	m1.Question = make([]dns.Question, 1)
 	m1.Question[0] = question
 
-	in, _, err := c.Exchange(m1, fmt.Sprintf("%s:53", server))
+	in, _, err := c.Exchange(m1, fmt.Sprintf("%s", dnsUrl.Host))
 	return in, err
 }
 

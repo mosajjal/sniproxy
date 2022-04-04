@@ -206,7 +206,7 @@ func runDns() {
 				},
 			}
 
-			serverTls := &dns.Server{Addr: ":53", Net: "tcp-tls", TLSConfig: tlsConfig}
+			serverTls := &dns.Server{Addr: ":853", Net: "tcp-tls", TLSConfig: tlsConfig}
 			log.Printf("Started DoT on %s:%d -- listening", "0.0.0.0", 853)
 			err = serverTls.ListenAndServe()
 			defer serverTls.Shutdown()

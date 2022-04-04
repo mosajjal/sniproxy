@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"net"
@@ -14,7 +15,9 @@ import (
 )
 
 var bindIP = flag.String("bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
-var upstreamDNS = flag.String("upstreamDNS", "1.1.1.1", "Upstream DNS IP")
+var bindDnsOverTcp = flag.Bool("bindDnsOverTcp", false, "enable DNS over TCP as well as of UDP")
+var bindDnsOverTls = flag.Bool("bindDnsOverTls", false, "enable DNS over TLS as well as of UDP")
+var upstreamDNS = flag.String("upstreamDNS", "udp://1.1.1.1:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853")
 var domainListPath = flag.String("domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.log")
 var domainListRefreshInterval = flag.Duration("domainListRefreshInterval", 60*time.Second, "Interval to re-fetch the domain list")
 var allDomains = flag.Bool("allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
@@ -162,14 +165,57 @@ func runDns() {
 
 	dns.HandleFunc(".", handle53)
 
-	// start server
-	server := &dns.Server{Addr: ":53", Net: "udp"}
-	log.Printf("Started DNS on %s:%d -- listening", "0.0.0.0", 53)
-	err := server.ListenAndServe()
-	defer server.Shutdown()
-	if err != nil {
-		log.Fatalf("Failed to start server: %s\n ", err.Error())
+	// start DNS UDP serverUdp
+	go func() {
+		serverUdp := &dns.Server{Addr: ":53", Net: "udp"}
+		log.Printf("Started UDP DNS on %s:%d -- listening", "0.0.0.0", 53)
+		err := serverUdp.ListenAndServe()
+		defer serverUdp.Shutdown()
+		if err != nil {
+			log.Fatalf("Failed to start server: %s\n ", err.Error())
+		}
+	}()
+
+	// start DNS UDP serverTcp
+	if *bindDnsOverTcp {
+		go func() {
+			serverTcp := &dns.Server{Addr: ":53", Net: "tcp"}
+			log.Printf("Started TCP DNS on %s:%d -- listening", "0.0.0.0", 53)
+			err := serverTcp.ListenAndServe()
+			defer serverTcp.Shutdown()
+			if err != nil {
+				log.Fatalf("Failed to start server: %s\n ", err.Error())
+			}
+		}()
 	}
+
+	// start DNS UDP serverTls
+	if *bindDnsOverTls {
+		go func() {
+
+			cert, key, err := GenerateSelfSignedCertKey(*publicIP, nil, nil)
+			if err != nil {
+				log.Fatal("fatal Error: ", err)
+			}
+			tlsConfig := &tls.Config{
+				Certificates: []tls.Certificate{
+					{
+						Certificate: [][]byte{cert},
+						PrivateKey:  key,
+					},
+				},
+			}
+
+			serverTls := &dns.Server{Addr: ":53", Net: "tcp-tls", TLSConfig: tlsConfig}
+			log.Printf("Started DoT on %s:%d -- listening", "0.0.0.0", 853)
+			err = serverTls.ListenAndServe()
+			defer serverTls.Shutdown()
+			if err != nil {
+				log.Fatalf("Failed to start server: %s\n ", err.Error())
+			}
+		}()
+	}
+
 }
 
 func main() {

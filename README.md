@@ -11,9 +11,9 @@ Usage of sniproxy:
   -allDomains
     	Route all HTTP(s) traffic through the SNI proxy
   -bindDnsOverTcp
-    	enable DNS over TCP as well as of UDP
+    	enable DNS over TCP as well as UDP
   -bindDnsOverTls
-    	enable DNS over TLS as well as of UDP
+    	enable DNS over TLS as well as UDP
   -bindIP string
     	Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0 (default "0.0.0.0")
   -domainListPath string

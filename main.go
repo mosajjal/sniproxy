@@ -15,8 +15,8 @@ import (
 )
 
 var bindIP = flag.String("bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
-var bindDnsOverTcp = flag.Bool("bindDnsOverTcp", false, "enable DNS over TCP as well as of UDP")
-var bindDnsOverTls = flag.Bool("bindDnsOverTls", false, "enable DNS over TLS as well as of UDP")
+var bindDnsOverTcp = flag.Bool("bindDnsOverTcp", false, "enable DNS over TCP as well as UDP")
+var bindDnsOverTls = flag.Bool("bindDnsOverTls", false, "enable DNS over TLS as well as UDP")
 var upstreamDNS = flag.String("upstreamDNS", "udp://1.1.1.1:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853")
 var domainListPath = flag.String("domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.log")
 var domainListRefreshInterval = flag.Duration("domainListRefreshInterval", 60*time.Second, "Interval to re-fetch the domain list")

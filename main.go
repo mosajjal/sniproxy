@@ -8,9 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
 	log "github.com/sirupsen/logrus"
-
 	"github.com/miekg/dns"
 )
 
@@ -22,6 +20,8 @@ var domainListPath = flag.String("domainListPath", "", "Path to the domain list.
 var domainListRefreshInterval = flag.Duration("domainListRefreshInterval", 60*time.Second, "Interval to re-fetch the domain list")
 var allDomains = flag.Bool("allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
 var publicIP = flag.String("publicIP", "", "Public IP of the server, reply address of DNS queries")
+var CertPath = flag.String("CertPath", "", "Certificate file path")
+var KeyPath = flag.String("KeyPath", "", "PrivateKey file path")
 
 func handle80(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusFound)
@@ -85,7 +85,6 @@ func lookupDomain4(domain string) (net.IP, error) {
 }
 
 func handle443(conn net.Conn) error {
-
 	incoming := make([]byte, 2048)
 	n, err := conn.Read(incoming)
 	if err != nil {
@@ -115,9 +114,7 @@ func handle443(conn net.Conn) error {
 		return err
 	}
 	defer target.Close()
-
 	target.Write(incoming[:n])
-
 	pipe(conn, target)
 	return nil
 }
@@ -126,12 +123,10 @@ func handle53(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.Compress = false
-
 	switch r.Opcode {
 	case dns.OpcodeQuery:
 		parseQuery(m, *publicIP)
 	}
-
 	w.WriteMsg(m)
 }
 
@@ -143,7 +138,6 @@ func handleError(err error) {
 
 func runHttp() {
 	http.HandleFunc("/", handle80)
-
 	server := http.Server{
 		Addr: ":80",
 	}
@@ -162,9 +156,7 @@ func runHttps() {
 }
 
 func runDns() {
-
 	dns.HandleFunc(".", handle53)
-
 	// start DNS UDP serverUdp
 	go func() {
 		serverUdp := &dns.Server{Addr: ":53", Net: "udp"}
@@ -192,20 +184,15 @@ func runDns() {
 	// start DNS UDP serverTls
 	if *bindDnsOverTls {
 		go func() {
-
-			cert, key, err := GenerateSelfSignedCertKey(*publicIP, nil, nil)
+			if *CertPath == "" || *KeyPath == "" {
+				log.Fatalln("-CertPath and -CertPath must be set. exitting...")
+			}
+			crt, err := tls.LoadX509KeyPair(*CertPath, *KeyPath)
 			if err != nil {
-				log.Fatal("fatal Error: ", err)
+				log.Fatalln(err.Error())
 			}
-			tlsConfig := &tls.Config{
-				Certificates: []tls.Certificate{
-					{
-						Certificate: [][]byte{cert},
-						PrivateKey:  key,
-					},
-				},
-			}
-
+			tlsConfig := &tls.Config{}
+			tlsConfig.Certificates = []tls.Certificate{crt}
 			serverTls := &dns.Server{Addr: ":853", Net: "tcp-tls", TLSConfig: tlsConfig}
 			log.Printf("Started DoT on %s:%d -- listening", "0.0.0.0", 853)
 			err = serverTls.ListenAndServe()
@@ -219,11 +206,11 @@ func runDns() {
 }
 
 func main() {
-
 	flag.Parse()
 	if *domainListPath == "" || *publicIP == "" || *upstreamDNS == "" {
 		log.Fatalln("-domainListPath and -publicIP must be set. exitting...")
 	}
+
 	go runHttp()
 	go runHttps()
 	go runDns()

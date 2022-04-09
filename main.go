@@ -20,8 +20,8 @@ var domainListPath = flag.String("domainListPath", "", "Path to the domain list.
 var domainListRefreshInterval = flag.Duration("domainListRefreshInterval", 60*time.Second, "Interval to re-fetch the domain list")
 var allDomains = flag.Bool("allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
 var publicIP = flag.String("publicIP", "", "Public IP of the server, reply address of DNS queries")
-var CertPath = flag.String("CertPath", "", "Certificate file path")
-var KeyPath = flag.String("KeyPath", "", "PrivateKey file path")
+var certPath = flag.String("certPath", "", "Certificate file path")
+var keyPath = flag.String("keyPath", "", "PrivateKey file path")
 
 func handle80(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusFound)
@@ -184,10 +184,10 @@ func runDns() {
 	// start DNS UDP serverTls
 	if *bindDnsOverTls {
 		go func() {
-			if *CertPath == "" || *KeyPath == "" {
-				log.Fatalln("-CertPath and -CertPath must be set. exitting...")
+			if *certPath == "" || *keyPath == "" {
+				log.Fatalln("-certPath and -certPath must be set. exitting...")
 			}
-			crt, err := tls.LoadX509KeyPair(*CertPath, *KeyPath)
+			crt, err := tls.LoadX509KeyPair(*certPath, *keyPath)
 			if err != nil {
 				log.Fatalln(err.Error())
 			}

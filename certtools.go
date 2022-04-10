@@ -13,7 +13,6 @@ import (
 	"math/big"
 	"net"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -76,8 +75,8 @@ func NewSelfSignedCACert(cfg Config, key crypto.Signer) (*x509.Certificate, erro
 // GenerateSelfSignedCertKey creates a self-signed certificate and key for the given host.
 // Host may be an IP or a DNS name
 // You may also specify additional subject alt names (either ip or dns names) for the certificate.
-func GenerateSelfSignedCertKey(host string, alternateIPs []net.IP, alternateDNS []string) ([]byte, []byte, error) {
-	return GenerateSelfSignedCertKeyWithFixtures(host, alternateIPs, alternateDNS, "")
+func GenerateSelfSignedCertKey(host string, alternateIPs []net.IP, alternateDNS []string, fixtureDirectory string) ([]byte, []byte, error) {
+	return GenerateSelfSignedCertKeyWithFixtures(host, alternateIPs, alternateDNS, fixtureDirectory)
 }
 
 // GenerateSelfSignedCertKeyWithFixtures creates a self-signed certificate and key for the given host.
@@ -85,16 +84,14 @@ func GenerateSelfSignedCertKey(host string, alternateIPs []net.IP, alternateDNS 
 // for the certificate.
 //
 // If fixtureDirectory is non-empty, it is a directory path which can contain pre-generated certs. The format is:
-// <host>_<ip>-<ip>_<alternateDNS>-<alternateDNS>.crt
-// <host>_<ip>-<ip>_<alternateDNS>-<alternateDNS>.key
+// <host>.crt
+// <host>.key
 // Certs/keys not existing in that directory are created.
 func GenerateSelfSignedCertKeyWithFixtures(host string, alternateIPs []net.IP, alternateDNS []string, fixtureDirectory string) ([]byte, []byte, error) {
 	validFrom := time.Now().Add(-time.Hour) // valid an hour earlier to avoid flakes due to clock skew
 	maxAge := time.Hour * 24 * 365          // one year self-signed certs
-
-	baseName := fmt.Sprintf("%s_%s_%s", host, strings.Join(ipsToStrings(alternateIPs), "-"), strings.Join(alternateDNS, "-"))
-	certFixturePath := filepath.Join(fixtureDirectory, baseName+".crt")
-	keyFixturePath := filepath.Join(fixtureDirectory, baseName+".key")
+	certFixturePath := filepath.Join(fixtureDirectory, host+".crt")
+	keyFixturePath := filepath.Join(fixtureDirectory, host+".key")
 	if len(fixtureDirectory) > 0 {
 		cert, err := ioutil.ReadFile(certFixturePath)
 		if err == nil {
@@ -104,7 +101,7 @@ func GenerateSelfSignedCertKeyWithFixtures(host string, alternateIPs []net.IP, a
 			}
 			return nil, nil, fmt.Errorf("cert %s can be read, but key %s cannot: %v", certFixturePath, keyFixturePath, err)
 		}
-		maxAge = 100 * time.Hour * 24 * 365 // 100 years fixtures
+		maxAge = time.Hour * 24 * 36525 // 100 years fixtures
 	}
 
 	caKey, err := rsa.GenerateKey(cryptorand.Reader, 2048)

@@ -1,16 +1,17 @@
 package main
 
 import (
-	"os"
 	"crypto/tls"
 	"flag"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
-	log "github.com/sirupsen/logrus"
+
 	"github.com/miekg/dns"
+	log "github.com/sirupsen/logrus"
 )
 
 var bindIP = flag.String("bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
@@ -183,19 +184,19 @@ func runDns() {
 	// start DNS UDP serverTls
 	if *bindDnsOverTls {
 		go func() {
-			dir := "/usr/local/sniproxy/"
-			_, err := os.Stat(dir)
-			if err != nil {
-				err := os.Mkdir(dir, os.ModePerm)
-				if err != nil {
- 					log.Fatalf("mkdir failed: %s\n ", err.Error())
-				}
-			}
-			_, _, err = GenerateSelfSignedCertKey(*publicIP, nil, nil, dir)
+			// dir := "/usr/local/sniproxy/"
+			// _, err := os.Stat(dir)
+			// if err != nil {
+			// 	err := os.Mkdir(dir, os.ModePerm)
+			// 	if err != nil {
+			// 		log.Fatalf("mkdir failed: %s\n ", err.Error())
+			// 	}
+			// }
+			_, _, err := GenerateSelfSignedCertKey(*publicIP, nil, nil, os.TempDir())
 			if err != nil {
 				log.Fatal("fatal Error: ", err)
 			}
-			crt, err := tls.LoadX509KeyPair(dir + *publicIP + ".crt", dir + *publicIP + ".key")
+			crt, err := tls.LoadX509KeyPair(os.TempDir()+*publicIP+".crt", os.TempDir()+*publicIP+".key")
 			if err != nil {
 				log.Fatalln(err.Error())
 			}

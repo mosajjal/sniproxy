@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -182,7 +183,14 @@ func runDns() {
 	// start DNS UDP serverTls
 	if *bindDnsOverTls {
 		go func() {
-			dir := "/etc/"
+			dir := "/usr/local/sniproxy/"
+			_, err := os.Stat(dir)
+			if err != nil {
+				err := os.Mkdir(dir, os.ModePerm)
+				if err != nil {
+ 					log.Fatalf("mkdir failed: %s\n ", err.Error())
+				}
+			}
 			_, _, err := GenerateSelfSignedCertKey(*publicIP, nil, nil, dir)
 			if err != nil {
 				log.Fatal("fatal Error: ", err)

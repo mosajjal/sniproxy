@@ -191,7 +191,7 @@ func runDns() {
  					log.Fatalf("mkdir failed: %s\n ", err.Error())
 				}
 			}
-			_, _, err := GenerateSelfSignedCertKey(*publicIP, nil, nil, dir)
+			_, _, err = GenerateSelfSignedCertKey(*publicIP, nil, nil, dir)
 			if err != nil {
 				log.Fatal("fatal Error: ", err)
 			}

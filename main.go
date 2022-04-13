@@ -277,7 +277,7 @@ func main() {
 		if conf.String("domainListPath") != "" {
 			domainListPath = conf.String("domainListPath")
 		}
-		if string(conf.Int("domainListRefreshInterval")) != "" {
+		if conf.Int("domainListRefreshInterval") != 0 {
 			domainListRefreshInterval = conf.Int("domainListRefreshInterval")
 		}
 		if conf.String("publicIP") != "" {

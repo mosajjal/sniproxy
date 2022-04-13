@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
@@ -14,14 +15,18 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var bindIP = flag.String("bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
-var bindDnsOverTcp = flag.Bool("bindDnsOverTcp", false, "enable DNS over TCP as well as UDP")
-var bindDnsOverTls = flag.Bool("bindDnsOverTls", false, "enable DNS over TLS as well as UDP")
-var upstreamDNS = flag.String("upstreamDNS", "udp://1.1.1.1:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853")
-var domainListPath = flag.String("domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.log")
-var domainListRefreshInterval = flag.Duration("domainListRefreshInterval", 60*time.Second, "Interval to re-fetch the domain list")
-var allDomains = flag.Bool("allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
-var publicIP = flag.String("publicIP", "", "Public IP of the server, reply address of DNS queries")
+type RunConfig struct {
+	BindIP                    string        `json:"bindIP"`
+	PublicIP                  string        `json:"publicIP"`
+	UpstreamDNS               string        `json:"upstreamDNS"`
+	DomainListPath            string        `json:"domainListPath"`
+	DomainListRefreshInterval time.Duration `json:"domainListRefreshInterval"`
+	BindDnsOverTcp            bool          `json:"bindDnsOverTcp"`
+	BindDnsOverTls            bool          `json:"bindDnsOverTls"`
+	AllDomains                bool          `json:"allDomains"`
+}
+
+var c RunConfig
 
 func handle80(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusFound)
@@ -70,7 +75,7 @@ func lookupDomain4(domain string) (net.IP, error) {
 	if !strings.HasSuffix(domain, ".") {
 		domain = domain + "."
 	}
-	rAddrDns, err := performExternalQuery(dns.Question{Name: domain, Qtype: dns.TypeA, Qclass: dns.ClassINET}, *upstreamDNS)
+	rAddrDns, err := performExternalQuery(dns.Question{Name: domain, Qtype: dns.TypeA, Qclass: dns.ClassINET}, c.UpstreamDNS)
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -125,7 +130,7 @@ func handle53(w dns.ResponseWriter, r *dns.Msg) {
 	m.Compress = false
 	switch r.Opcode {
 	case dns.OpcodeQuery:
-		parseQuery(m, *publicIP)
+		parseQuery(m, c.PublicIP)
 	}
 	w.WriteMsg(m)
 }
@@ -145,7 +150,7 @@ func runHttp() {
 }
 
 func runHttps() {
-	l, err := net.Listen("tcp", *bindIP+":443")
+	l, err := net.Listen("tcp", c.BindIP+":443")
 	handleError(err)
 	defer l.Close()
 	for {
@@ -169,7 +174,7 @@ func runDns() {
 	}()
 
 	// start DNS UDP serverTcp
-	if *bindDnsOverTcp {
+	if c.BindDnsOverTcp {
 		go func() {
 			serverTcp := &dns.Server{Addr: ":53", Net: "tcp"}
 			log.Printf("Started TCP DNS on %s:%d -- listening", "0.0.0.0", 53)
@@ -182,7 +187,7 @@ func runDns() {
 	}
 
 	// start DNS UDP serverTls
-	if *bindDnsOverTls {
+	if c.BindDnsOverTls {
 		go func() {
 			// dir := "/usr/local/sniproxy/"
 			// _, err := os.Stat(dir)
@@ -192,11 +197,11 @@ func runDns() {
 			// 		log.Fatalf("mkdir failed: %s\n ", err.Error())
 			// 	}
 			// }
-			_, _, err := GenerateSelfSignedCertKey(*publicIP, nil, nil, os.TempDir())
+			_, _, err := GenerateSelfSignedCertKey(c.PublicIP, nil, nil, os.TempDir())
 			if err != nil {
 				log.Fatal("fatal Error: ", err)
 			}
-			crt, err := tls.LoadX509KeyPair(os.TempDir()+*publicIP+".crt", os.TempDir()+*publicIP+".key")
+			crt, err := tls.LoadX509KeyPair(os.TempDir()+c.PublicIP+".crt", os.TempDir()+c.PublicIP+".key")
 			if err != nil {
 				log.Fatalln(err.Error())
 			}
@@ -216,8 +221,36 @@ func runDns() {
 }
 
 func main() {
+
+	flag.StringVar(&c.BindIP, "bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
+	flag.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://1.1.1.1:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853")
+	flag.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.log")
+	flag.StringVar(&c.PublicIP, "publicIP", "", "Public IP of the server, reply address of DNS queries")
+	flag.DurationVar(&c.DomainListRefreshInterval, "domainListRefreshInterval", 60*time.Second, "Interval to re-fetch the domain list")
+	flag.BoolVar(&c.AllDomains, "allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
+	flag.BoolVar(&c.BindDnsOverTcp, "bindDnsOverTcp", false, "enable DNS over TCP as well as UDP")
+	flag.BoolVar(&c.BindDnsOverTls, "bindDnsOverTls", false, "enable DNS over TLS as well as UDP")
+
+	config := flag.String("config", "", "path to JSON configuration file")
+
 	flag.Parse()
-	if *domainListPath == "" || *publicIP == "" || *upstreamDNS == "" {
+	if *config != "" {
+		configFile, err := os.Open(*config)
+		if err != nil {
+			log.Fatalf("failed to open config file: %s", err.Error())
+		}
+		defer configFile.Close()
+		fileStat, err := configFile.Stat()
+		configBytes := make([]byte, fileStat.Size())
+		_, err = configFile.Read(configBytes)
+
+		err = json.Unmarshal(configBytes, &c)
+		if err != nil {
+			log.Fatalf("failed to parse config file: %s", err.Error())
+		}
+	}
+
+	if c.DomainListPath == "" || c.PublicIP == "" || c.UpstreamDNS == "" {
 		log.Fatalln("-domainListPath and -publicIP must be set. exitting...")
 	}
 
@@ -226,9 +259,9 @@ func main() {
 	go runDns()
 
 	// fetch domain list and refresh them periodically
-	routeDomainList = loadDomainsToList(*domainListPath)
-	for range time.NewTicker(*domainListRefreshInterval).C {
-		routeDomainList = loadDomainsToList(*domainListPath)
+	routeDomainList = loadDomainsToList(c.DomainListPath)
+	for range time.NewTicker(c.DomainListRefreshInterval).C {
+		routeDomainList = loadDomainsToList(c.DomainListPath)
 	}
 
 }

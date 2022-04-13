@@ -114,9 +114,9 @@ func performExternalQuery(question dns.Question, server string) (*dns.Msg, error
 func parseQuery(m *dns.Msg, ip string) {
 	for _, q := range m.Question {
 
-		if !checkBypassDomainList(q.Name, routeDomainList) && !*allDomains {
+		if !checkBypassDomainList(q.Name, routeDomainList) && !allDomains {
 			log.Printf("Bypassing Traffic for %s\n", q.Name)
-			in, err := performExternalQuery(q, *upstreamDNS)
+			in, err := performExternalQuery(q, upstreamDNS)
 			if err != nil {
 				log.Println(err)
 			}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -27,6 +28,12 @@ type RunConfig struct {
 }
 
 var c RunConfig
+var config string
+
+func init() {
+	flag.StringVar(&config, "config", "", "path to JSON configuration file")
+	flag.StringVar(&config, "c", "", "path to JSON configuration file (shorthand)")
+}
 
 func handle80(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusFound)
@@ -201,7 +208,7 @@ func runDns() {
 			if err != nil {
 				log.Fatal("fatal Error: ", err)
 			}
-			crt, err := tls.LoadX509KeyPair(os.TempDir()+c.PublicIP+".crt", os.TempDir()+c.PublicIP+".key")
+			crt, err := tls.LoadX509KeyPair(os.TempDir()+"/"+c.PublicIP+".crt", os.TempDir()+"/"+c.PublicIP+".key")
 			if err != nil {
 				log.Fatalln(err.Error())
 			}
@@ -220,22 +227,64 @@ func runDns() {
 
 }
 
+func IsPublicIP(IP net.IP) bool {
+	if IP.IsLoopback() || IP.IsLinkLocalMulticast() || IP.IsLinkLocalUnicast() {
+		return false
+	}
+	if ip4 := IP.To4(); ip4 != nil {
+		switch true {
+		case ip4[0] == 10:
+			return false
+		case ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31:
+			return false
+		case ip4[0] == 192 && ip4[1] == 168:
+			return false
+		default:
+			return true
+		}
+	}
+	return false
+}
+
+func getPublicIP() string {
+	conn, _ := net.Dial("udp", "8.8.8.8:53")
+	defer conn.Close()
+	localAddr := conn.LocalAddr().String()
+	idx := strings.LastIndex(localAddr, ":")
+	ipaddr := localAddr[0:idx]
+	if IsPublicIP(net.ParseIP(ipaddr)) {
+		return ipaddr
+	}else{
+		resp, err := http.Get("https://myexternalip.com/raw")
+		if err != nil {
+			return err.Error()
+		}
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return err.Error()
+		}
+		ipaddr := string(body)
+		defer resp.Body.Close()
+		return ipaddr
+	}
+}
+
 func main() {
 
 	flag.StringVar(&c.BindIP, "bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
 	flag.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://1.1.1.1:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853")
-	flag.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.log")
-	flag.StringVar(&c.PublicIP, "publicIP", "", "Public IP of the server, reply address of DNS queries")
-	flag.DurationVar(&c.DomainListRefreshInterval, "domainListRefreshInterval", 60*time.Second, "Interval to re-fetch the domain list")
+	flag.StringVar(&c.DomainListPath, "domainListPath", "domains.csv", "Path to the domain list. eg: /tmp/domainlist.log")
+	flag.StringVar(&c.PublicIP, "publicIP", getPublicIP(), "Public IP of the server, reply address of DNS queries")
+	flag.DurationVar(&c.DomainListRefreshInterval, "domainListRefreshInterval", 60, "Interval to re-fetch the domain list")
 	flag.BoolVar(&c.AllDomains, "allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
 	flag.BoolVar(&c.BindDnsOverTcp, "bindDnsOverTcp", false, "enable DNS over TCP as well as UDP")
 	flag.BoolVar(&c.BindDnsOverTls, "bindDnsOverTls", false, "enable DNS over TLS as well as UDP")
 
-	config := flag.String("config", "", "path to JSON configuration file")
+	//config := flag.String("config", "", "path to JSON configuration file")
 
 	flag.Parse()
-	if *config != "" {
-		configFile, err := os.Open(*config)
+	if config != "" {
+		configFile, err := os.Open(config)
 		if err != nil {
 			log.Fatalf("failed to open config file: %s", err.Error())
 		}
@@ -254,13 +303,14 @@ func main() {
 		log.Fatalln("-domainListPath and -publicIP must be set. exitting...")
 	}
 
+	log.Printf("Reply address for DNS query: %s", c.PublicIP)
 	go runHttp()
 	go runHttps()
 	go runDns()
 
 	// fetch domain list and refresh them periodically
 	routeDomainList = loadDomainsToList(c.DomainListPath)
-	for range time.NewTicker(c.DomainListRefreshInterval).C {
+	for range time.NewTicker(time.Duration(c.DomainListRefreshInterval)*time.Second).C {
 		routeDomainList = loadDomainsToList(c.DomainListPath)
 	}
 

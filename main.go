@@ -247,7 +247,7 @@ func main() {
 	flag.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://1.1.1.1:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853")
 	flag.StringVar(&c.DomainListPath, "domainListPath", "domains.csv", "Path to the domain list. eg: /tmp/domainlist.log")
 	flag.StringVar(&c.PublicIP, "publicIP", getPublicIP(), "Public IP of the server, reply address of DNS queries")
-	flag.DurationVar(&c.DomainListRefreshInterval, "domainListRefreshInterval", 60*time.Second, "Interval to re-fetch the domain list")
+	flag.DurationVar(&c.DomainListRefreshInterval, "domainListRefreshInterval", 60, "Interval to re-fetch the domain list")
 	flag.BoolVar(&c.AllDomains, "allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
 	flag.BoolVar(&c.BindDnsOverTcp, "bindDnsOverTcp", false, "enable DNS over TCP as well as UDP")
 	flag.BoolVar(&c.BindDnsOverTls, "bindDnsOverTls", false, "enable DNS over TLS as well as UDP")
@@ -281,7 +281,7 @@ func main() {
 
 	// fetch domain list and refresh them periodically
 	routeDomainList = loadDomainsToList(c.DomainListPath)
-	for range time.NewTicker(c.DomainListRefreshInterval).C {
+	for range time.NewTicker(time.Duration(c.DomainListRefreshInterval)*time.Second).C {
 		routeDomainList = loadDomainsToList(c.DomainListPath)
 	}
 

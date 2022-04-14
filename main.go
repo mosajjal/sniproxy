@@ -202,7 +202,7 @@ func runDns() {
 			if err != nil {
 				log.Fatal("fatal Error: ", err)
 			}
-			crt, err := tls.LoadX509KeyPair(os.TempDir()+c.PublicIP+".crt", os.TempDir()+c.PublicIP+".key")
+			crt, err := tls.LoadX509KeyPair(os.TempDir()+"/"+c.PublicIP+".crt", os.TempDir()+"/"+c.PublicIP+".key")
 			if err != nil {
 				log.Fatalln(err.Error())
 			}

@@ -28,6 +28,12 @@ type RunConfig struct {
 }
 
 var c RunConfig
+var config string
+
+func init() {
+	flag.StringVar(&config, "config", "", "path to JSON configuration file")
+	flag.StringVar(&config, "c", "", "path to JSON configuration file (shorthand)")
+}
 
 func handle80(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusFound)
@@ -221,9 +227,34 @@ func runDns() {
 
 }
 
+func IsPublicIP(IP net.IP) bool {
+	if IP.IsLoopback() || IP.IsLinkLocalMulticast() || IP.IsLinkLocalUnicast() {
+		return false
+	}
+	if ip4 := IP.To4(); ip4 != nil {
+		switch true {
+		case ip4[0] == 10:
+			return false
+		case ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31:
+			return false
+		case ip4[0] == 192 && ip4[1] == 168:
+			return false
+		default:
+			return true
+		}
+	}
+	return false
+}
+
 func getPublicIP() string {
-	conn, err := net.Dial("udp", "google.com:80")
-	if err != nil {
+	conn, _ := net.Dial("udp", "8.8.8.8:53")
+	defer conn.Close()
+	localAddr := conn.LocalAddr().String()
+	idx := strings.LastIndex(localAddr, ":")
+	ipaddr := localAddr[0:idx]
+	if IsPublicIP(net.ParseIP(ipaddr)) {
+		return ipaddr
+	}else{
 		resp, err := http.Get("https://myexternalip.com/raw")
 		if err != nil {
 			return err.Error()
@@ -232,13 +263,10 @@ func getPublicIP() string {
 		if err != nil {
 			return err.Error()
 		}
-		content := string(body)
+		ipaddr := string(body)
 		defer resp.Body.Close()
-		return content
+		return ipaddr
 	}
-	defer conn.Close()
-	var my_ip = strings.Split(conn.LocalAddr().String(), ":")[0]
-	return my_ip
 }
 
 func main() {
@@ -252,11 +280,11 @@ func main() {
 	flag.BoolVar(&c.BindDnsOverTcp, "bindDnsOverTcp", false, "enable DNS over TCP as well as UDP")
 	flag.BoolVar(&c.BindDnsOverTls, "bindDnsOverTls", false, "enable DNS over TLS as well as UDP")
 
-	config := flag.String("config", "", "path to JSON configuration file")
+	//config := flag.String("config", "", "path to JSON configuration file")
 
 	flag.Parse()
-	if *config != "" {
-		configFile, err := os.Open(*config)
+	if config != "" {
+		configFile, err := os.Open(config)
 		if err != nil {
 			log.Fatalf("failed to open config file: %s", err.Error())
 		}
@@ -275,6 +303,7 @@ func main() {
 		log.Fatalln("-domainListPath and -publicIP must be set. exitting...")
 	}
 
+	log.Printf("Reply address for DNS query: %s", c.PublicIP)
 	go runHttp()
 	go runHttps()
 	go runDns()

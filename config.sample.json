@@ -1,9 +1,8 @@
 {
     "bindIP": "0.0.0.0",
-    "publicIP": "1.1.1.1",
     "upstreamDNS": "udp://1.1.1.1:53",
     "domainListPath": "domains.csv",
-    "domainListRefreshInterval": 60,
+    "domainListRefreshInterval": "60s",
     "bindDnsOverTcp": false,
     "bindDnsOverTls": false,
     "allDomains": false

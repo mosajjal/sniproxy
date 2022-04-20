@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	doqclient "github.com/natesales/doqd/pkg/client"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/miekg/dns"
@@ -38,19 +39,10 @@ func checkBypassDomainList(domainName string, domainList [][]string) bool {
 	return false
 }
 
-// func loadDomainsToList(Filename string) [][]string {
-// 	file, err := os.Open(Filename)
-// 	handleError(err)
-// 	log.Println("(re)loading File: ", Filename)
-// 	defer file.Close()
-
-// 	var lines [][]string
-// 	scanner := bufio.NewScanner(file)
-// 	for scanner.Scan() {
-// 		lines = append(lines, strings.Split(scanner.Text(), ","))
-// 	}
-// 	return lines
-// }
+var DnsClient struct {
+	Doq        doqclient.Client
+	classicDns dns.Client
+}
 
 func loadDomainsToList(Filename string) [][]string {
 	log.Info("Loading the domain from file/url to a list")
@@ -91,24 +83,23 @@ func loadDomainsToList(Filename string) [][]string {
 	return lines
 }
 
-func performExternalQuery(question dns.Question, server string) (*dns.Msg, error) {
+func performExternalQuery(question dns.Question, server string) (dns.Msg, error) {
 	dnsUrl, err := url.Parse(server)
 	if err != nil {
 		log.Fatalf("Invalid upstream DNS URL: %s", server)
 	}
-
-	c := dns.Client{
-		Net: dnsUrl.Scheme,
-	}
-
 	m1 := new(dns.Msg)
 	m1.Id = dns.Id()
 	m1.RecursionDesired = true
 	m1.Question = make([]dns.Question, 1)
 	m1.Question[0] = question
 
-	in, _, err := c.Exchange(m1, fmt.Sprintf("%s", dnsUrl.Host))
-	return in, err
+	if dnsUrl.Scheme == "quic" {
+		return DnsClient.Doq.SendQuery(*m1)
+
+	}
+	r, _, err := DnsClient.classicDns.Exchange(m1, dnsUrl.Host)
+	return *r, err
 }
 
 func parseQuery(m *dns.Msg, ip string) {

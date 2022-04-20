@@ -7,11 +7,14 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	doqclient "github.com/natesales/doqd/pkg/client"
+	doqserver "github.com/natesales/doqd/pkg/server"
 	flag "github.com/spf13/pflag"
 
 	"github.com/miekg/dns"
@@ -26,6 +29,7 @@ type RunConfig struct {
 	DomainListRefreshInterval Duration `json:"domainListRefreshInterval"`
 	BindDnsOverTcp            bool     `json:"bindDnsOverTcp"`
 	BindDnsOverTls            bool     `json:"bindDnsOverTls"`
+	BindDnsOverQuic           bool     `json:"bindDnsOverQuic"`
 	AllDomains                bool     `json:"allDomains"`
 }
 
@@ -123,11 +127,13 @@ func lookupDomain4(domain string) (net.IP, error) {
 		log.Println(err)
 		return nil, err
 	}
-	if rAddrDns.Answer[0].Header().Rrtype == dns.TypeCNAME {
-		return lookupDomain4(rAddrDns.Answer[0].(*dns.CNAME).Target)
-	}
-	if rAddrDns.Answer[0].Header().Rrtype == dns.TypeA {
-		return rAddrDns.Answer[0].(*dns.A).A, nil
+	if len(rAddrDns.Answer) > 0 {
+		if rAddrDns.Answer[0].Header().Rrtype == dns.TypeCNAME {
+			return lookupDomain4(rAddrDns.Answer[0].(*dns.CNAME).Target)
+		}
+		if rAddrDns.Answer[0].Header().Rrtype == dns.TypeA {
+			return rAddrDns.Answer[0].(*dns.A).A, nil
+		}
 	}
 	return nil, fmt.Errorf("Unknown type")
 }
@@ -253,6 +259,31 @@ func runDns() {
 		}()
 	}
 
+	if c.BindDnsOverQuic {
+
+		_, _, err := GenerateSelfSignedCertKey(c.PublicIP, nil, nil, os.TempDir())
+		if err != nil {
+			log.Fatal("fatal Error: ", err)
+		}
+		crt, err := tls.LoadX509KeyPair(filepath.Join(os.TempDir(), c.PublicIP+".crt"), filepath.Join(os.TempDir(), c.PublicIP+".key"))
+		if err != nil {
+			log.Fatalln(err.Error())
+		}
+		tlsConfig := &tls.Config{}
+		tlsConfig.Certificates = []tls.Certificate{crt}
+
+		// Create the QUIC listener
+		doqServer, err := doqserver.New(":8853", crt, "127.0.0.1:53", true)
+		if err != nil {
+			log.Fatalln(err.Error())
+		}
+
+		// Accept QUIC connections
+		log.Infof("Starting QUIC listener on %s\n", ":443")
+		go doqServer.Listen()
+
+	}
+
 }
 
 func main() {
@@ -261,10 +292,11 @@ func main() {
 	flag.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://1.1.1.1:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853")
 	flag.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.log")
 	flag.StringVar(&c.PublicIP, "publicIP", getPublicIP(), "Public IP of the server, reply address of DNS queries")
-	flag.DurationVar(&c.DomainListRefreshInterval.Duration, "domainListRefreshInterval", 60*time.Second, "Interval to re-fetch the domain list")
+	flag.DurationVar(&c.DomainListRefreshInterval.Duration, "domainListRefreshInterval", 60*time.Minute, "Interval to re-fetch the domain list, default: 1 hour")
 	flag.BoolVar(&c.AllDomains, "allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
 	flag.BoolVar(&c.BindDnsOverTcp, "bindDnsOverTcp", false, "enable DNS over TCP as well as UDP")
 	flag.BoolVar(&c.BindDnsOverTls, "bindDnsOverTls", false, "enable DNS over TLS as well as UDP")
+	flag.BoolVar(&c.BindDnsOverQuic, "bindDnsOverQuic", false, "enable DNS over QUIC as well as UDP")
 
 	config := flag.StringP("config", "c", "", "path to JSON configuration file")
 
@@ -289,6 +321,29 @@ func main() {
 		log.Fatalln("--domainListPath and --publicIP must be set. exitting...")
 	} else {
 		log.Infof("Using Public IP: %s", c.PublicIP)
+	}
+
+	// set up upstream DNS clients
+	dnsUrl, err := url.Parse(c.UpstreamDNS)
+	if err != nil {
+		log.Fatalf("Invalid upstream DNS URL: %s", c.UpstreamDNS)
+	}
+	if dnsUrl.Scheme != "quic" {
+		c := dns.Client{
+			Net: dnsUrl.Scheme,
+		}
+		// this dial is not used and it's only good for testing
+		_, err := c.Dial(dnsUrl.Host)
+		if err != nil {
+			log.Fatalf("Failed to connect to upstream DNS: %s", err.Error())
+		}
+		DnsClient.classicDns = c
+	} else {
+		c, err := doqclient.New(dnsUrl.Host, true, true)
+		if err != nil {
+			log.Fatalf("Failed to connect to upstream DNS: %s", err.Error())
+		}
+		DnsClient.Doq = c
 	}
 
 	go runHttp()

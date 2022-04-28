@@ -101,7 +101,7 @@ func getPublicIP() string {
 		// backup method of getting a public IP
 		if external_ip == "" {
 			// dig +short myip.opendns.com @208.67.222.222
-			dnsRes, err := performExternalQuery(dns.Question{Name: "myip.opendns.com.", Qtype: dns.TypeA, Qclass: dns.ClassINET}, "208.67.222.222")
+			dnsRes, _, err := performExternalQuery(dns.Question{Name: "myip.opendns.com.", Qtype: dns.TypeA, Qclass: dns.ClassINET}, "208.67.222.222")
 			if err != nil {
 				return err.Error()
 			}
@@ -122,7 +122,7 @@ func lookupDomain4(domain string) (net.IP, error) {
 	if !strings.HasSuffix(domain, ".") {
 		domain = domain + "."
 	}
-	rAddrDns, err := performExternalQuery(dns.Question{Name: domain, Qtype: dns.TypeA, Qclass: dns.ClassINET}, c.UpstreamDNS)
+	rAddrDns, _, err := performExternalQuery(dns.Question{Name: domain, Qtype: dns.TypeA, Qclass: dns.ClassINET}, c.UpstreamDNS)
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -173,14 +173,26 @@ func handle443(conn net.Conn) error {
 	return nil
 }
 
-func handle53(w dns.ResponseWriter, r *dns.Msg) {
+func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.Compress = false
-	switch r.Opcode {
-	case dns.OpcodeQuery:
-		parseQuery(m, c.PublicIP)
+
+	if r.Opcode != dns.OpcodeQuery {
+		m.SetRcode(r, dns.RcodeNotImplemented)
+		w.WriteMsg(m)
+		return
 	}
+
+	for _, q := range m.Question {
+		answers, err := processQuestion(q)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		m.Answer = append(m.Answer, answers...)
+	}
+
 	w.WriteMsg(m)
 }
 
@@ -210,7 +222,7 @@ func runHttps() {
 }
 
 func runDns() {
-	dns.HandleFunc(".", handle53)
+	dns.HandleFunc(".", handleDNS)
 	// start DNS UDP serverUdp
 	go func() {
 		serverUdp := &dns.Server{Addr: ":53", Net: "udp"}

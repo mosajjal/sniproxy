@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	doqclient "github.com/natesales/doqd/pkg/client"
 	log "github.com/sirupsen/logrus"
@@ -17,20 +18,20 @@ import (
 
 var routeDomainList [][]string
 
-// checkSkipDomainList returns true if the domain exists in the domainList
-func checkBypassDomainList(domainName string, domainList [][]string) bool {
-	for _, item := range domainList {
+// inDomainList returns true if the domain exists in the routeDomainList
+func inDomainList(name string) bool {
+	for _, item := range routeDomainList {
 		if len(item) == 2 {
 			if item[1] == "suffix" {
-				if strings.HasSuffix(domainName, item[0]) {
+				if strings.HasSuffix(name, item[0]) {
 					return true
 				}
 			} else if item[1] == "fqdn" {
-				if domainName == item[0] {
+				if name == item[0] {
 					return true
 				}
 			} else if item[1] == "prefix" {
-				if strings.HasPrefix(domainName, item[0]) {
+				if strings.HasPrefix(name, item[0]) {
 					return true
 				}
 			}
@@ -83,45 +84,47 @@ func loadDomainsToList(Filename string) [][]string {
 	return lines
 }
 
-func performExternalQuery(question dns.Question, server string) (dns.Msg, error) {
+func performExternalQuery(question dns.Question, server string) (*dns.Msg, time.Duration, error) {
 	dnsUrl, err := url.Parse(server)
 	if err != nil {
 		log.Fatalf("Invalid upstream DNS URL: %s", server)
 	}
-	m1 := new(dns.Msg)
-	m1.Id = dns.Id()
-	m1.RecursionDesired = true
-	m1.Question = make([]dns.Question, 1)
-	m1.Question[0] = question
+	msg := dns.Msg{
+		MsgHdr: dns.MsgHdr{
+			Id:               dns.Id(),
+			RecursionDesired: true,
+		},
+		Question: []dns.Question{question},
+	}
 
 	if dnsUrl.Scheme == "quic" {
-		return DnsClient.Doq.SendQuery(*m1)
+		rmsg, err := DnsClient.Doq.SendQuery(msg)
+		return &rmsg, 0, err
 
 	}
-	r, _, err := DnsClient.classicDns.Exchange(m1, dnsUrl.Host)
-	return *r, err
+	return DnsClient.classicDns.Exchange(&msg, dnsUrl.Host)
 }
 
-func parseQuery(m *dns.Msg, ip string) {
-	for _, q := range m.Question {
-
-		if !checkBypassDomainList(q.Name, routeDomainList) && !c.AllDomains {
-			log.Printf("Bypassing Traffic for %s\n", q.Name)
-			in, err := performExternalQuery(q, c.UpstreamDNS)
-			if err != nil {
-				log.Println(err)
-			}
-			m.Answer = append(m.Answer, in.Answer...)
-
-		} else {
-			rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, ip))
-			if err == nil {
-				log.Printf("Routing Traffic for %s\n", q.Name)
-				m.Answer = append(m.Answer, rr)
-				return
-			}
+func processQuestion(q dns.Question) ([]dns.RR, error) {
+	if c.AllDomains || inDomainList(q.Name) {
+		// Return the public IP.
+		rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, c.PublicIP))
+		if err != nil {
+			return nil, err
 		}
 
+		log.Printf("returned sniproxy address for domain: %s", q.Name)
+
+		return []dns.RR{rr}, nil
 	}
 
+	// Otherwise do an upstream query and use that answer.
+	resp, rtt, err := performExternalQuery(q, c.UpstreamDNS)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Printf("returned origin address for domain: %s, rtt: %s", q.Name, rtt)
+
+	return resp.Answer, nil
 }

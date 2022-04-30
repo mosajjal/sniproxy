@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mosajjal/sniproxy/doh"
 	doqclient "github.com/natesales/doqd/pkg/client"
 	log "github.com/sirupsen/logrus"
 
@@ -42,6 +43,7 @@ func inDomainList(name string) bool {
 
 var DnsClient struct {
 	Doq        doqclient.Client
+	Doh        doh.Client
 	classicDns dns.Client
 }
 
@@ -100,6 +102,11 @@ func performExternalQuery(question dns.Question, server string) (*dns.Msg, time.
 	if dnsUrl.Scheme == "quic" {
 		rmsg, err := DnsClient.Doq.SendQuery(msg)
 		return &rmsg, 0, err
+
+	}
+	if dnsUrl.Scheme == "https" {
+		rmsg, t, err := DnsClient.Doh.SendQuery(msg)
+		return &rmsg, t, err
 
 	}
 	return DnsClient.classicDns.Exchange(&msg, dnsUrl.Host)

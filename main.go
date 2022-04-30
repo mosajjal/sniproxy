@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mosajjal/sniproxy/doh"
 	doqclient "github.com/natesales/doqd/pkg/client"
 	doqserver "github.com/natesales/doqd/pkg/server"
 	flag "github.com/spf13/pflag"
@@ -157,7 +158,7 @@ func handle443(conn net.Conn) error {
 	// }
 	// rAddr := rAddrDns.Answer[0].(*dns.A).A
 	rAddr, err := lookupDomain4(sni)
-	if err != nil {
+	if err != nil || rAddr == nil {
 		log.Println(err)
 		return err
 	}
@@ -212,12 +213,17 @@ func runHttp() {
 
 func runHttps() {
 	l, err := net.Listen("tcp", c.BindIP+":443")
+
 	handleError(err)
 	defer l.Close()
 	for {
-		conn, err := l.Accept()
+		c, err := l.Accept()
 		handleError(err)
-		go handle443(conn)
+		go func() {
+			go handle443(c)
+			<-time.After(30 * time.Second)
+			c.Close()
+		}()
 	}
 }
 
@@ -301,7 +307,7 @@ func runDns() {
 func main() {
 
 	flag.StringVar(&c.BindIP, "bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
-	flag.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://1.1.1.1:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853")
+	flag.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://1.1.1.1:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query")
 	flag.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.log")
 	flag.StringVar(&c.PublicIP, "publicIP", getPublicIP(), "Public IP of the server, reply address of DNS queries")
 	flag.DurationVar(&c.DomainListRefreshInterval.Duration, "domainListRefreshInterval", 60*time.Minute, "Interval to re-fetch the domain list, default: 1 hour")
@@ -340,7 +346,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("Invalid upstream DNS URL: %s", c.UpstreamDNS)
 	}
-	if dnsUrl.Scheme != "quic" {
+	if dnsUrl.Scheme == "quic" {
+		c, err := doqclient.New(dnsUrl.Host, true, true)
+		if err != nil {
+			log.Fatalf("Failed to connect to upstream DNS: %s", err.Error())
+		}
+		DnsClient.Doq = c
+	} else if dnsUrl.Scheme == "https" {
+		c, err := doh.New(*dnsUrl, true, true)
+		if err != nil {
+			log.Fatalf("Failed to connect to upstream DNS: %s", err.Error())
+		}
+		DnsClient.Doh = c
+	} else {
 		c := dns.Client{
 			Net: dnsUrl.Scheme,
 		}
@@ -350,12 +368,6 @@ func main() {
 			log.Fatalf("Failed to connect to upstream DNS: %s", err.Error())
 		}
 		DnsClient.classicDns = c
-	} else {
-		c, err := doqclient.New(dnsUrl.Host, true, true)
-		if err != nil {
-			log.Fatalf("Failed to connect to upstream DNS: %s", err.Error())
-		}
-		DnsClient.Doq = c
 	}
 
 	go runHttp()

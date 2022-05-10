@@ -17,11 +17,10 @@ import (
 	"github.com/miekg/dns"
 )
 
-var routeDomainList [][]string
-
 // inDomainList returns true if the domain exists in the routeDomainList
+// todo: this needs to be replaced by a few tst
 func inDomainList(name string) bool {
-	for _, item := range routeDomainList {
+	for _, item := range c.routeDomainList {
 		if len(item) == 2 {
 			if item[1] == "suffix" {
 				if strings.HasSuffix(name, item[0]) {

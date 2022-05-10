@@ -23,15 +23,16 @@ import (
 )
 
 type RunConfig struct {
-	BindIP                    string   `json:"bindIP"`
-	PublicIP                  string   `json:"publicIP"`
-	UpstreamDNS               string   `json:"upstreamDNS"`
-	DomainListPath            string   `json:"domainListPath"`
-	DomainListRefreshInterval Duration `json:"domainListRefreshInterval"`
-	BindDnsOverTcp            bool     `json:"bindDnsOverTcp"`
-	BindDnsOverTls            bool     `json:"bindDnsOverTls"`
-	BindDnsOverQuic           bool     `json:"bindDnsOverQuic"`
-	AllDomains                bool     `json:"allDomains"`
+	BindIP                    string     `json:"bindIP"`
+	PublicIP                  string     `json:"publicIP"`
+	UpstreamDNS               string     `json:"upstreamDNS"`
+	DomainListPath            string     `json:"domainListPath"`
+	DomainListRefreshInterval Duration   `json:"domainListRefreshInterval"`
+	BindDnsOverTcp            bool       `json:"bindDnsOverTcp"`
+	BindDnsOverTls            bool       `json:"bindDnsOverTls"`
+	BindDnsOverQuic           bool       `json:"bindDnsOverQuic"`
+	AllDomains                bool       `json:"allDomains"`
+	routeDomainList           [][]string `json:"-"`
 }
 
 var c RunConfig
@@ -88,7 +89,7 @@ func getPublicIP() string {
 	if !net.ParseIP(ipaddr).IsPrivate() {
 		return ipaddr
 	} else {
-		var external_ip = ""
+		external_ip := ""
 		// trying to get the public IP from multiple sources to see if they match.
 		resp, err := http.Get("https://myexternalip.com/raw")
 		if err == nil {
@@ -236,7 +237,7 @@ func runDns() {
 		err := serverUdp.ListenAndServe()
 		defer serverUdp.Shutdown()
 		if err != nil {
-			log.Fatalf("Failed to start server: %s\n ", err.Error())
+			log.Fatalf("Failed to start server: %s\nYou can run the following command to pinpoint which process is listening on port 53\nsudo ss -pltun -at '( dport = :53 or sport = :53 )'", err.Error())
 		}
 	}()
 
@@ -248,7 +249,7 @@ func runDns() {
 			err := serverTcp.ListenAndServe()
 			defer serverTcp.Shutdown()
 			if err != nil {
-				log.Fatalf("Failed to start server: %s\n ", err.Error())
+				log.Fatalf("Failed to start server: %s\nYou can run the following command to pinpoint which process is listening on port 53\nsudo ss -pltun -at '( dport = :53 or sport = :53 )'", err.Error())
 			}
 		}()
 	}
@@ -301,11 +302,9 @@ func runDns() {
 		go doqServer.Listen()
 
 	}
-
 }
 
 func main() {
-
 	flag.StringVar(&c.BindIP, "bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
 	flag.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://1.1.1.1:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query")
 	flag.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.log")
@@ -335,8 +334,9 @@ func main() {
 		}
 	}
 
-	if c.DomainListPath == "" || c.PublicIP == "" || c.UpstreamDNS == "" {
-		log.Fatalln("--domainListPath and --publicIP must be set. exitting...")
+	if c.DomainListPath == "" {
+		log.Warnf("Domain list (--domainListPath) is not specified, routing ALL domains through the SNI proxy")
+		c.AllDomains = true
 	} else {
 		log.Infof("Using Public IP: %s", c.PublicIP)
 	}
@@ -375,9 +375,12 @@ func main() {
 	go runDns()
 
 	// fetch domain list and refresh them periodically
-	routeDomainList = loadDomainsToList(c.DomainListPath)
-	for range time.NewTicker(c.DomainListRefreshInterval.Duration).C {
-		routeDomainList = loadDomainsToList(c.DomainListPath)
+	if !c.AllDomains {
+		c.routeDomainList = loadDomainsToList(c.DomainListPath)
+		for range time.NewTicker(c.DomainListRefreshInterval.Duration).C {
+			c.routeDomainList = loadDomainsToList(c.DomainListPath)
+		}
+	} else {
+		select {}
 	}
-
 }

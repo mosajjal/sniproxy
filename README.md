@@ -16,7 +16,7 @@ Usage of sniproxy:
   -c, --config string                        path to JSON configuration file
       --domainListPath string                Path to the domain list. eg: /tmp/domainlist.log
       --domainListRefreshInterval duration   Interval to re-fetch the domain list, default: 1 hour (default 1h0m0s)
-      --publicIP string                      Public IP of the server, reply address of DNS queries (default "115.188.69.44")
+      --publicIP string                      Public IP of the server, reply address of DNS queries (default "YOUR PUBLIC IP")
       --upstreamDNS string                   Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query (default "udp://1.1.1.1:53")
 ```      
 

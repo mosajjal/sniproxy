@@ -23,8 +23,11 @@ Usage of sniproxy:
 Docker/Podman
 
 ```
-docker run -it --rm -p 80:80 -p 443:443 -p 53:53/udp -v "$(pwd):/tmp/" ghcr.io/mosajjal/sniproxy:master --domainListPath https://raw.githubusercontent.com/mosajjal/sniproxy/master/domains.csv 
+docker run -d --pull always -p 80:80 -p 443:443 -p 53:53/udp -v "$(pwd):/tmp/" ghcr.io/mosajjal/sniproxy:latest --domainListPath https://raw.githubusercontent.com/mosajjal/sniproxy/master/domains.csv 
 ```
+
+In order for `sniproxy` to work properly, ports 80, 443 and 53 need to be open. if you're using ubuntu, there's a good chance that `systemd-resolved` is using port 53. to disable it, follow [these instructions](https://gist.github.com/zoilomora/f7d264cefbb589f3f1b1fc2cea2c844c)
+
 
 Issue
 =====

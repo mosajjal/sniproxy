@@ -16,9 +16,10 @@ import (
 	"golang.org/x/net/dns/dnsmessage"
 )
 
+// Client encapsulates all functions and attributes for a DoH client
 type Client struct {
 	Session *httptrace.ClientTrace
-	Url     url.URL
+	URL     url.URL
 }
 
 func mustNewName(name string) dnsmessage.Name {
@@ -29,6 +30,7 @@ func mustNewName(name string) dnsmessage.Name {
 	return n
 }
 
+// New creates a new DoH client
 func New(server url.URL, tlsInsecureSkipVerify bool, compat bool) (Client, error) {
 	// Select TLS protocols for DoH
 	c := Client{}
@@ -37,10 +39,11 @@ func New(server url.URL, tlsInsecureSkipVerify bool, compat bool) (Client, error
 	c.Session = &httptrace.ClientTrace{
 		GotConn: func(info httptrace.GotConnInfo) {},
 	}
-	c.Url = server
+	c.URL = server
 	return c, nil // nil error
 }
 
+// SendQuery performs a DoH query
 func (c Client) SendQuery(msg dns.Msg) (dns.Msg, time.Duration, error) {
 	// get the time
 	start := time.Now()
@@ -64,8 +67,8 @@ func (c Client) SendQuery(msg dns.Msg) (dns.Msg, time.Duration, error) {
 	// and get the response
 	traceCtx := httptrace.WithClientTrace(context.Background(), c.Session)
 
-	doh_url := c.Url.Scheme + "://" + c.Url.Host + c.Url.Path + "?dns=" + dohbase64
-	req, err := http.NewRequestWithContext(traceCtx, http.MethodGet, doh_url, nil)
+	dohURL := c.URL.Scheme + "://" + c.URL.Host + c.URL.Path + "?dns=" + dohbase64
+	req, err := http.NewRequestWithContext(traceCtx, http.MethodGet, dohURL, nil)
 	if err != nil {
 		log.Println(err)
 		return dns.Msg{}, 0, err

@@ -6,11 +6,11 @@ import (
 	"time"
 )
 
-type Duration struct {
+type duration struct {
 	time.Duration
 }
 
-func (d *Duration) UnmarshalJSON(b []byte) error {
+func (d *duration) UnmarshalJSON(b []byte) error {
 	var v interface{}
 	if err := json.Unmarshal(b, &v); err != nil {
 		return err

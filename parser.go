@@ -16,12 +16,12 @@ package main
 
 import "fmt"
 
-var TLSHeaderLength = 5
+var tlsHeaderLength = 5
 
-/* This function is basically all most folks want to invoke out of this
- * jumble of bits. This will take an incoming TLS Client Hello (including
- * all the fuzzy bits at the beginning of it - fresh out of the socket) and
- * go ahead and give us the SNI Name they want. */
+// GetHostname :This function is basically all most folks want to invoke out of this
+// jumble of bits. This will take an incoming TLS Client Hello (including
+// all the fuzzy bits at the beginning of it - fresh out of the socket) and
+// go ahead and give us the SNI Name they want.
 func GetHostname(data []byte) (string, error) {
 	if len(data) == 0 || data[0] != 0x16 {
 		return "", fmt.Errorf("Doesn't look like a TLS Client Hello")
@@ -50,8 +50,8 @@ func lengthFromData(data []byte, index int) int {
 	return (b1 << 8) + b2
 }
 
-/* Given a Server Name TLS Extension block, parse out and return the SNI
- * (Server Name Indication) payload */
+// GetSNIBlock :Given a Server Name TLS Extension block, parse out and return the SNI
+// (Server Name Indication) payload
 func GetSNIBlock(data []byte) ([]byte, error) {
 	index := 0
 
@@ -73,7 +73,7 @@ func GetSNIBlock(data []byte) ([]byte, error) {
 	)
 }
 
-/* Given a TLS Extensions data block, go ahead and find the SN block */
+// GetSNBlock :Given a TLS Extensions data block, go ahead and find the SN block
 func GetSNBlock(data []byte) ([]byte, error) {
 	index := 0
 
@@ -105,7 +105,7 @@ func GetSNBlock(data []byte) ([]byte, error) {
 	)
 }
 
-/* Given a raw TLS Client Hello, go ahead and find all the Extensions */
+// GetExtensionBlock :Given a raw TLS Client Hello, go ahead and find all the Extensions
 func GetExtensionBlock(data []byte) ([]byte, error) {
 	/*   data[0]           - content type
 	 *   data[1], data[2]  - major/minor version
@@ -113,7 +113,7 @@ func GetExtensionBlock(data []byte) ([]byte, error) {
 	 *   data[...38+5]     - start of SessionID (length bit)
 	 *   data[38+5]        - length of SessionID
 	 */
-	var index = TLSHeaderLength + 38
+	var index = tlsHeaderLength + 38
 
 	if len(data) <= index+1 {
 		return []byte{}, fmt.Errorf("Not enough bits to be a Client Hello")

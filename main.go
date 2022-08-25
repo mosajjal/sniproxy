@@ -336,7 +336,8 @@ func main() {
 	if c.DomainListPath == "" {
 		log.Warnf("Domain list (--domainListPath) is not specified, routing ALL domains through the SNI proxy")
 		c.AllDomains = true
-	} else if c.PublicIP != "" {
+	}
+	if c.PublicIP != "" {
 		log.Infof("Using Public IP: %s", c.PublicIP)
 	} else {
 		log.Fatalf("Could not automatically determine public IP. you should provide it manually using --publicIP")

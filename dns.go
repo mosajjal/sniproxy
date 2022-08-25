@@ -40,10 +40,10 @@ func inDomainList(name string) bool {
 	return false
 }
 
-var DnsClient struct {
+var dnsClient struct {
 	Doq        doqclient.Client
 	Doh        doh.Client
-	classicDns dns.Client
+	classicDNS dns.Client
 }
 
 func loadDomainsToList(Filename string) [][]string {
@@ -86,7 +86,7 @@ func loadDomainsToList(Filename string) [][]string {
 }
 
 func performExternalQuery(question dns.Question, server string) (*dns.Msg, time.Duration, error) {
-	dnsUrl, err := url.Parse(server)
+	dnsURL, err := url.Parse(server)
 	if err != nil {
 		log.Fatalf("Invalid upstream DNS URL: %s", server)
 	}
@@ -98,17 +98,17 @@ func performExternalQuery(question dns.Question, server string) (*dns.Msg, time.
 		Question: []dns.Question{question},
 	}
 
-	if dnsUrl.Scheme == "quic" {
-		rmsg, err := DnsClient.Doq.SendQuery(msg)
+	if dnsURL.Scheme == "quic" {
+		rmsg, err := dnsClient.Doq.SendQuery(msg)
 		return &rmsg, 0, err
 
 	}
-	if dnsUrl.Scheme == "https" {
-		rmsg, t, err := DnsClient.Doh.SendQuery(msg)
+	if dnsURL.Scheme == "https" {
+		rmsg, t, err := dnsClient.Doh.SendQuery(msg)
 		return &rmsg, t, err
 
 	}
-	return DnsClient.classicDns.Exchange(&msg, dnsUrl.Host)
+	return dnsClient.classicDNS.Exchange(&msg, dnsURL.Host)
 }
 
 func processQuestion(q dns.Question) ([]dns.RR, error) {

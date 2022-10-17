@@ -40,9 +40,9 @@ type runConfig struct {
 
 var c runConfig
 
-func handle80(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusFound)
-}
+// func handle80(w http.ResponseWriter, r *http.Request) {
+// 	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusFound)
+// }
 
 func pipe(conn1 net.Conn, conn2 net.Conn) {
 	chan1 := getChannel(conn1)
@@ -156,7 +156,7 @@ func handle443(conn net.Conn) error {
 		return err
 	}
 	// check SNI against domainlist for an extra layer of security
-	if !c.AllDomains && inDomainList(sni) {
+	if !c.AllDomains && inDomainList(sni+".") {
 		log.Warnf("[TCP] a client requested connection to %s, but it's not allowed as per configuration.. resetting TCP", sni)
 		conn.Close()
 		return nil
@@ -167,7 +167,7 @@ func handle443(conn net.Conn) error {
 		return err
 	}
 	// TODO: handle timeout and context here
-	log.Infof("[TCP] connecting to %s (%s)", rAddr, sni)
+	log.Infof("[TLS] connecting to %s (%s)", rAddr, sni)
 	target, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: rAddr, Port: 443})
 	if err != nil {
 		log.Println("could not connect to target", err)
@@ -207,14 +207,6 @@ func handleError(err error) {
 	if err != nil {
 		log.Fatalln(err)
 	}
-}
-
-func runHTTP() {
-	http.HandleFunc("/", handle80)
-	server := http.Server{
-		Addr: ":80",
-	}
-	server.ListenAndServe()
 }
 
 func runHTTPS() {

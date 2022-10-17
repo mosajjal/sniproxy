@@ -1,4 +1,4 @@
-FROM golang:1.18.1-alpine3.15
+FROM golang:1.19.2-alpine3.16
 LABEL maintainer "Ali Mosajjal <hi@n0p.me>"
 RUN apk add --no-cache git
 RUN mkdir /app 

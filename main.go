@@ -13,9 +13,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-collections/collections/tst"
+	doqclient "github.com/mosajjal/doqd/pkg/client"
+	doqserver "github.com/mosajjal/doqd/pkg/server"
 	"github.com/mosajjal/sniproxy/doh"
-	doqclient "github.com/natesales/doqd/pkg/client"
-	doqserver "github.com/natesales/doqd/pkg/server"
 	flag "github.com/spf13/pflag"
 
 	"github.com/miekg/dns"
@@ -23,16 +24,18 @@ import (
 )
 
 type runConfig struct {
-	BindIP                    string     `json:"bindIP"`
-	PublicIP                  string     `json:"publicIP"`
-	UpstreamDNS               string     `json:"upstreamDNS"`
-	DomainListPath            string     `json:"domainListPath"`
-	DomainListRefreshInterval duration   `json:"domainListRefreshInterval"`
-	BindDNSOverTCP            bool       `json:"bindDnsOverTcp"`
-	BindDNSOverTLS            bool       `json:"bindDnsOverTls"`
-	BindDNSOverQuic           bool       `json:"bindDnsOverQuic"`
-	AllDomains                bool       `json:"allDomains"`
-	routeDomainList           [][]string `json:"-"`
+	BindIP                    string   `json:"bindIP"`
+	PublicIP                  string   `json:"publicIP"`
+	UpstreamDNS               string   `json:"upstreamDNS"`
+	DomainListPath            string   `json:"domainListPath"`
+	DomainListRefreshInterval duration `json:"domainListRefreshInterval"`
+	BindDNSOverTCP            bool     `json:"bindDnsOverTcp"`
+	BindDNSOverTLS            bool     `json:"bindDnsOverTls"`
+	BindDNSOverQuic           bool     `json:"bindDnsOverQuic"`
+	AllDomains                bool     `json:"allDomains"`
+	routePrefixes             *tst.TernarySearchTree
+	routeSuffixes             *tst.TernarySearchTree
+	routeFQDNs                map[string]uint8
 }
 
 var c runConfig
@@ -140,6 +143,7 @@ func lookupDomain4(domain string) (net.IP, error) {
 }
 
 func handle443(conn net.Conn) error {
+	defer conn.Close()
 	incoming := make([]byte, 2048)
 	n, err := conn.Read(incoming)
 	if err != nil {
@@ -151,17 +155,19 @@ func handle443(conn net.Conn) error {
 		log.Println(err)
 		return err
 	}
-	// rAddrDns, err := performExternalQuery(dns.Question{Name: sni + ".", Qtype: dns.TypeA, Qclass: dns.ClassINET}, *upstreamDNS)
-	// if err != nil {
-	// 	log.Println(err)
-	// 	return err
-	// }
-	// rAddr := rAddrDns.Answer[0].(*dns.A).A
+	// check SNI against domainlist for an extra layer of security
+	if !c.AllDomains && inDomainList(sni) {
+		log.Warnf("[TCP] a client requested connection to %s, but it's not allowed as per configuration.. resetting TCP", sni)
+		conn.Close()
+		return nil
+	}
 	rAddr, err := lookupDomain4(sni)
 	if err != nil || rAddr == nil {
 		log.Println(err)
 		return err
 	}
+	// TODO: handle timeout and context here
+	log.Infof("[TCP] connecting to %s (%s)", rAddr, sni)
 	target, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: rAddr, Port: 443})
 	if err != nil {
 		log.Println("could not connect to target", err)
@@ -221,8 +227,9 @@ func runHTTPS() {
 		handleError(err)
 		go func() {
 			go handle443(c)
-			<-time.After(30 * time.Second)
-			c.Close()
+			//TODO: there's a better way to handle TCP timeouts than just a blanket 30 seconds rule
+			// <-time.After(30 * time.Second)
+			// c.Close()
 		}()
 	}
 }
@@ -297,7 +304,7 @@ func runDNS() {
 		}
 
 		// Accept QUIC connections
-		log.Infof("Starting QUIC listener on %s\n", ":443")
+		log.Infof("Starting QUIC listener on %s\n", ":8853")
 		go doqServer.Listen()
 
 	}
@@ -349,27 +356,27 @@ func main() {
 		log.Fatalf("Invalid upstream DNS URL: %s", c.UpstreamDNS)
 	}
 	if dnsURL.Scheme == "quic" {
-		c, err := doqclient.New(dnsURL.Host, true, true)
+		dnsC, err := doqclient.New(dnsURL.Host, true, true)
 		if err != nil {
 			log.Fatalf("Failed to connect to upstream DNS: %s", err.Error())
 		}
-		dnsClient.Doq = c
+		dnsClient.Doq = dnsC
 	} else if dnsURL.Scheme == "https" {
-		c, err := doh.New(*dnsURL, true, true)
+		dnsC, err := doh.New(*dnsURL, true, true)
 		if err != nil {
 			log.Fatalf("Failed to connect to upstream DNS: %s", err.Error())
 		}
-		dnsClient.Doh = c
+		dnsClient.Doh = dnsC
 	} else {
-		c := dns.Client{
+		dnsC := dns.Client{
 			Net: dnsURL.Scheme,
 		}
 		// this dial is not used and it's only good for testing
-		_, err := c.Dial(dnsURL.Host)
+		_, err := dnsC.Dial(dnsURL.Host)
 		if err != nil {
 			log.Fatalf("Failed to connect to upstream DNS: %s", err.Error())
 		}
-		dnsClient.classicDNS = c
+		dnsClient.classicDNS = dnsC
 	}
 
 	go runHTTP()
@@ -378,9 +385,11 @@ func main() {
 
 	// fetch domain list and refresh them periodically
 	if !c.AllDomains {
-		c.routeDomainList = loadDomainsToList(c.DomainListPath)
+		// c.routeDomainList = loadDomainsToList(c.DomainListPath)
+		c.routePrefixes, c.routeSuffixes, c.routeFQDNs = LoadDomainsCsv(c.DomainListPath)
 		for range time.NewTicker(c.DomainListRefreshInterval.Duration).C {
-			c.routeDomainList = loadDomainsToList(c.DomainListPath)
+			// c.routeDomainList = loadDomainsToList(c.DomainListPath)
+			c.routePrefixes, c.routeSuffixes, c.routeFQDNs = LoadDomainsCsv(c.DomainListPath)
 		}
 	} else {
 		select {}

@@ -28,6 +28,12 @@ docker run -d --pull always -p 80:80 -p 443:443 -p 53:53/udp -v "$(pwd):/tmp/" g
 
 In order for `sniproxy` to work properly, ports 80, 443 and 53 need to be open. if you're using ubuntu, there's a good chance that `systemd-resolved` is using port 53. to disable it, follow [these instructions](https://gist.github.com/zoilomora/f7d264cefbb589f3f1b1fc2cea2c844c)
 
+if you would like to keep `systemd-resolved` and disable the builtin resolver, you can use the following:
+```bash
+sed -i 's/#DNS=/DNS=9.9.9.9/; s/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf 
+systemctl restart systemd-resolved
+```
+above will replace the builtin resolver with 9.9.9.9
 
 Issue
 =====

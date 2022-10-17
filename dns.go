@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -10,34 +9,43 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-collections/collections/tst"
+	doqclient "github.com/mosajjal/doqd/pkg/client"
 	"github.com/mosajjal/sniproxy/doh"
-	doqclient "github.com/natesales/doqd/pkg/client"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/miekg/dns"
 )
 
-// inDomainList returns true if the domain exists in the routeDomainList
+var (
+	matchPrefix = uint8(1)
+	matchSuffix = uint8(2)
+	matchFQDN   = uint8(3)
+)
+
+// inDomainList returns true if the domain is meant to be SKIPPED and not go through sni proxy
 // todo: this needs to be replaced by a few tst
-func inDomainList(name string) bool {
-	for _, item := range c.routeDomainList {
-		if len(item) == 2 {
-			if item[1] == "suffix" {
-				if strings.HasSuffix(name, item[0]) {
-					return true
-				}
-			} else if item[1] == "fqdn" {
-				if name == item[0] {
-					return true
-				}
-			} else if item[1] == "prefix" {
-				if strings.HasPrefix(name, item[0]) {
-					return true
-				}
-			}
+func inDomainList(fqdn string) bool {
+	fqdnLower := strings.ToLower(fqdn)
+	// check for fqdn match
+	if c.routeFQDNs[fqdnLower] == matchFQDN {
+		return false
+	}
+	// check for prefix match
+	if longestPrefix := c.routePrefixes.GetLongestPrefix(fqdnLower); longestPrefix != nil {
+		// check if the longest prefix is present in the type hashtable as a prefix
+		if c.routeFQDNs[longestPrefix.(string)] == matchPrefix {
+			return false
 		}
 	}
-	return false
+	// check for suffix match. Note that suffix is just prefix reversed
+	if longestSuffix := c.routeSuffixes.GetLongestPrefix(reverse(fqdnLower)); longestSuffix != nil {
+		// check if the longest suffix is present in the type hashtable as a suffix
+		if c.routeFQDNs[longestSuffix.(string)] == matchSuffix {
+			return false
+		}
+	}
+	return true
 }
 
 var dnsClient struct {
@@ -46,13 +54,26 @@ var dnsClient struct {
 	classicDNS dns.Client
 }
 
-func loadDomainsToList(Filename string) [][]string {
-	log.Info("Loading the domain from file/url to a list")
-	var lines [][]string
+func reverse(s string) string {
+	r := []rune(s)
+	for i, j := 0, len(r)-1; i < len(r)/2; i, j = i+1, j-1 {
+		r[i], r[j] = r[j], r[i]
+	}
+	return string(r)
+}
+
+// LoadDomainsCsv loads a domains Csv file/URL. returns 3 parameters:
+// 1. a TST for all the prefixes (type 1)
+// 2. a TST for all the suffixes (type 2)
+// 3. a hashtable for all the full match fqdn (type 3)
+func LoadDomainsCsv(Filename string) (prefix *tst.TernarySearchTree, suffix *tst.TernarySearchTree, all map[string]uint8) {
+	prefix = tst.New()
+	suffix = tst.New()
+	all = make(map[string]uint8)
+	log.Info("Loading the domain from file/url")
 	var scanner *bufio.Scanner
 	if strings.HasPrefix(Filename, "http://") || strings.HasPrefix(Filename, "https://") {
 		log.Info("domain list is a URL, trying to fetch")
-		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 		client := http.Client{
 			CheckRedirect: func(r *http.Request, via []*http.Request) error {
 				r.URL.Opaque = r.URL.Path
@@ -79,16 +100,36 @@ func loadDomainsToList(Filename string) [][]string {
 
 	for scanner.Scan() {
 		lowerCaseLine := strings.ToLower(scanner.Text())
-		lines = append(lines, strings.Split(lowerCaseLine, ","))
+		// split the line by comma to understand the logic
+		fqdn := strings.Split(lowerCaseLine, ",")
+		if len(fqdn) != 2 {
+			log.Warnf("%s is not a valid line, assuming fqdn", lowerCaseLine)
+			fqdn = []string{lowerCaseLine, "fqdn"}
+		}
+		// add the fqdn to the hashtable with its type
+		switch entryType := fqdn[1]; entryType {
+		case "prefix":
+			all[fqdn[0]] = matchPrefix
+			prefix.Insert(fqdn[0], fqdn[0])
+		case "suffix":
+			all[fqdn[0]] = matchSuffix
+			// suffix match is much faster if we reverse the strings and match for prefix
+			suffix.Insert(reverse(fqdn[0]), fqdn[0])
+		case "fqdn":
+			all[fqdn[0]] = matchFQDN
+		default:
+			log.Warnf("%s is not a valid line, assuming fqdn", lowerCaseLine)
+			all[fqdn[0]] = matchFQDN
+		}
 	}
-	log.Infof("%s loaded with %d lines", Filename, len(lines))
-	return lines
+	log.Infof("%s loaded with %d prefix, %d suffix and %d fqdn", Filename, prefix.Len(), suffix.Len(), len(all)-prefix.Len()-suffix.Len())
+	return prefix, suffix, all
 }
 
 func performExternalQuery(question dns.Question, server string) (*dns.Msg, time.Duration, error) {
 	dnsURL, err := url.Parse(server)
 	if err != nil {
-		log.Fatalf("Invalid upstream DNS URL: %s", server)
+		log.Fatalf("[DNS] Invalid upstream DNS URL: %s", server)
 	}
 	msg := dns.Msg{
 		MsgHdr: dns.MsgHdr{
@@ -112,14 +153,14 @@ func performExternalQuery(question dns.Question, server string) (*dns.Msg, time.
 }
 
 func processQuestion(q dns.Question) ([]dns.RR, error) {
-	if c.AllDomains || inDomainList(q.Name) {
+	if c.AllDomains || !inDomainList(q.Name) {
 		// Return the public IP.
 		rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, c.PublicIP))
 		if err != nil {
 			return nil, err
 		}
 
-		log.Printf("returned sniproxy address for domain: %s", q.Name)
+		log.Infof("[DNS] returned sniproxy address for domain: %s", q.Name)
 
 		return []dns.RR{rr}, nil
 	}
@@ -130,7 +171,7 @@ func processQuestion(q dns.Question) ([]dns.RR, error) {
 		return nil, err
 	}
 
-	log.Printf("returned origin address for domain: %s, rtt: %s", q.Name, rtt)
+	log.Infof("[DNS] returned origin address for domain: %s, rtt: %s", q.Name, rtt)
 
 	return resp.Answer, nil
 }

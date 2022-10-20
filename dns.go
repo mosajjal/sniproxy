@@ -51,7 +51,7 @@ func inDomainList(fqdn string) bool {
 var dnsClient struct {
 	Doq        doqclient.Client
 	Doh        doh.Client
-	classicDNS dns.Client
+	classicDNS *dns.Client
 }
 
 func reverse(s string) string {

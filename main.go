@@ -33,9 +33,12 @@ type runConfig struct {
 	BindDNSOverTLS            bool     `json:"bindDnsOverTls"`
 	BindDNSOverQuic           bool     `json:"bindDnsOverQuic"`
 	AllDomains                bool     `json:"allDomains"`
-	routePrefixes             *tst.TernarySearchTree
-	routeSuffixes             *tst.TernarySearchTree
-	routeFQDNs                map[string]uint8
+	TLSCert                   string   `json:"tlsCert"`
+	TLSKey                    string   `json:"tlsKey"`
+
+	routePrefixes *tst.TernarySearchTree
+	routeSuffixes *tst.TernarySearchTree
+	routeFQDNs    map[string]uint8
 }
 
 var c runConfig
@@ -255,11 +258,7 @@ func runDNS() {
 	// start DNS UDP serverTls
 	if c.BindDNSOverTLS {
 		go func() {
-			_, _, err := GenerateSelfSignedCertKey(c.PublicIP, nil, nil, os.TempDir())
-			if err != nil {
-				log.Fatal("fatal Error: ", err)
-			}
-			crt, err := tls.LoadX509KeyPair(filepath.Join(os.TempDir(), c.PublicIP+".crt"), filepath.Join(os.TempDir(), c.PublicIP+".key"))
+			crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
 			if err != nil {
 				log.Fatalln(err.Error())
 			}
@@ -278,11 +277,7 @@ func runDNS() {
 
 	if c.BindDNSOverQuic {
 
-		_, _, err := GenerateSelfSignedCertKey(c.PublicIP, nil, nil, os.TempDir())
-		if err != nil {
-			log.Fatal("fatal Error: ", err)
-		}
-		crt, err := tls.LoadX509KeyPair(filepath.Join(os.TempDir(), c.PublicIP+".crt"), filepath.Join(os.TempDir(), c.PublicIP+".key"))
+		crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
 		if err != nil {
 			log.Fatalln(err.Error())
 		}
@@ -305,13 +300,15 @@ func runDNS() {
 func main() {
 	flag.StringVar(&c.BindIP, "bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
 	flag.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://1.1.1.1:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query")
-	flag.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.log")
-	flag.StringVar(&c.PublicIP, "publicIP", getPublicIP(), "Public IP of the server, reply address of DNS queries")
-	flag.DurationVar(&c.DomainListRefreshInterval.Duration, "domainListRefreshInterval", 60*time.Minute, "Interval to re-fetch the domain list, default: 1 hour")
+	flag.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.csv")
+	flag.DurationVar(&c.DomainListRefreshInterval.Duration, "domainListRefreshInterval", 60*time.Minute, "Interval to re-fetch the domain list")
 	flag.BoolVar(&c.AllDomains, "allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
+	flag.StringVar(&c.PublicIP, "publicIP", getPublicIP(), "Public IP of the server, reply address of DNS queries")
 	flag.BoolVar(&c.BindDNSOverTCP, "bindDnsOverTcp", false, "enable DNS over TCP as well as UDP")
 	flag.BoolVar(&c.BindDNSOverTLS, "bindDnsOverTls", false, "enable DNS over TLS as well as UDP")
 	flag.BoolVar(&c.BindDNSOverQuic, "bindDnsOverQuic", false, "enable DNS over QUIC as well as UDP")
+	flag.StringVar(&c.TLSCert, "tlsCert", "", "Path to the certificate for DoH, DoT and DoQ. eg: /tmp/mycert.pem")
+	flag.StringVar(&c.TLSKey, "tlsKey", "", "Path to the certificate key for DoH, DoT and DoQ. eg: /tmp/mycert.key")
 
 	config := flag.StringP("config", "c", "", "path to JSON configuration file")
 
@@ -342,6 +339,17 @@ func main() {
 		log.Fatalf("Could not automatically determine public IP. you should provide it manually using --publicIP")
 	}
 
+	// generate self-signed certificate if not provided
+	if c.TLSCert == "" && c.TLSKey == "" {
+		_, _, err := GenerateSelfSignedCertKey(c.PublicIP, nil, nil, os.TempDir())
+		log.Infof("Certificate was not provided, using a self signed cert")
+		if err != nil {
+			log.Fatal("fatal Error: ", err)
+		}
+		c.TLSCert = filepath.Join(os.TempDir(), c.PublicIP+".crt")
+		c.TLSKey = filepath.Join(os.TempDir(), c.PublicIP+".key")
+	}
+
 	// set up upstream DNS clients
 	dnsURL, err := url.Parse(c.UpstreamDNS)
 	if err != nil {
@@ -368,7 +376,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to connect to upstream DNS: %s", err.Error())
 		}
-		dnsClient.classicDNS = dnsC
+		dnsClient.classicDNS = &dnsC
 	}
 
 	go runHTTP()
@@ -377,10 +385,8 @@ func main() {
 
 	// fetch domain list and refresh them periodically
 	if !c.AllDomains {
-		// c.routeDomainList = loadDomainsToList(c.DomainListPath)
 		c.routePrefixes, c.routeSuffixes, c.routeFQDNs = LoadDomainsCsv(c.DomainListPath)
 		for range time.NewTicker(c.DomainListRefreshInterval.Duration).C {
-			// c.routeDomainList = loadDomainsToList(c.DomainListPath)
 			c.routePrefixes, c.routeSuffixes, c.routeFQDNs = LoadDomainsCsv(c.DomainListPath)
 		}
 	} else {

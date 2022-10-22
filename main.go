@@ -7,16 +7,14 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/golang-collections/collections/tst"
-	doqclient "github.com/mosajjal/doqd/pkg/client"
+	"github.com/mosajjal/dnsclient"
 	doqserver "github.com/mosajjal/doqd/pkg/server"
-	"github.com/mosajjal/sniproxy/doh"
 	flag "github.com/spf13/pflag"
 
 	"github.com/miekg/dns"
@@ -39,6 +37,7 @@ type runConfig struct {
 	routePrefixes *tst.TernarySearchTree
 	routeSuffixes *tst.TernarySearchTree
 	routeFQDNs    map[string]uint8
+	dnsClient     dnsclient.Client
 }
 
 var c runConfig
@@ -108,11 +107,11 @@ func getPublicIP() string {
 		// backup method of getting a public IP
 		if externalIP == "" {
 			// dig +short myip.opendns.com @208.67.222.222
-			dnsRes, _, err := performExternalQuery(dns.Question{Name: "myip.opendns.com.", Qtype: dns.TypeA, Qclass: dns.ClassINET}, "208.67.222.222")
+			dnsRes, _, err := performExternalAQuery("myip.opendns.com.")
 			if err != nil {
 				return err.Error()
 			}
-			externalIP = dnsRes.Answer[0].(*dns.A).A.String()
+			externalIP = dnsRes[0].(*dns.A).A.String()
 		}
 
 		if externalIP != "" {
@@ -129,20 +128,21 @@ func lookupDomain4(domain string) (net.IP, error) {
 	if !strings.HasSuffix(domain, ".") {
 		domain = domain + "."
 	}
-	rAddrDNS, _, err := performExternalQuery(dns.Question{Name: domain, Qtype: dns.TypeA, Qclass: dns.ClassINET}, c.UpstreamDNS)
-	if err != nil {
-		log.Println(err)
-		return nil, err
-	}
-	if len(rAddrDNS.Answer) > 0 {
-		if rAddrDNS.Answer[0].Header().Rrtype == dns.TypeCNAME {
-			return lookupDomain4(rAddrDNS.Answer[0].(*dns.CNAME).Target)
+	rAddrDNS, _, err := performExternalAQuery(domain)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	if len(rAddrDNS) > 0 {
+		if rAddrDNS[0].Header().Rrtype == dns.TypeCNAME {
+			return lookupDomain4(rAddrDNS[0].(*dns.CNAME).Target)
 		}
-		if rAddrDNS.Answer[0].Header().Rrtype == dns.TypeA {
-			return rAddrDNS.Answer[0].(*dns.A).A, nil
+		if rAddrDNS[0].Header().Rrtype == dns.TypeA {
+			return rAddrDNS[0].(*dns.A).A, nil
 		}
+	} else {
+		return nil, fmt.Errorf("[DNS] Empty DNS response for %s with error %s", domain, err)
 	}
-	return nil, fmt.Errorf("Unknown type")
+	return nil, fmt.Errorf("[DNS] Unknown type %s", dns.TypeToString[rAddrDNS[0].Header().Rrtype])
 }
 
 func handle443(conn net.Conn) error {
@@ -150,12 +150,12 @@ func handle443(conn net.Conn) error {
 	incoming := make([]byte, 2048)
 	n, err := conn.Read(incoming)
 	if err != nil {
-		log.Println(err)
+		log.Errorln(err)
 		return err
 	}
 	sni, err := GetHostname(incoming)
 	if err != nil {
-		log.Println(err)
+		log.Errorln(err)
 		return err
 	}
 	// check SNI against domainlist for an extra layer of security
@@ -166,14 +166,18 @@ func handle443(conn net.Conn) error {
 	}
 	rAddr, err := lookupDomain4(sni)
 	if err != nil || rAddr == nil {
-		log.Println(err)
+		log.Warnln(err)
 		return err
 	}
 	// TODO: handle timeout and context here
+	if rAddr.IsLoopback() || rAddr.IsPrivate() || rAddr.Equal(net.IPv4(0, 0, 0, 0)) {
+		log.Infoln("[TLS] connection to private IP ignored")
+		return nil
+	}
 	log.Infof("[TLS] connecting to %s (%s)", rAddr, sni)
 	target, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: rAddr, Port: 443})
 	if err != nil {
-		log.Println("could not connect to target", err)
+		log.Errorln("could not connect to target", err)
 		conn.Close()
 		return err
 	}
@@ -234,7 +238,7 @@ func runDNS() {
 	// start DNS UDP serverUdp
 	go func() {
 		serverUDP := &dns.Server{Addr: ":53", Net: "udp"}
-		log.Printf("Started UDP DNS on %s:%d -- listening", "0.0.0.0", 53)
+		log.Infof("Started UDP DNS on %s:%d -- listening", "0.0.0.0", 53)
 		err := serverUDP.ListenAndServe()
 		defer serverUDP.Shutdown()
 		if err != nil {
@@ -246,7 +250,7 @@ func runDNS() {
 	if c.BindDNSOverTCP {
 		go func() {
 			serverTCP := &dns.Server{Addr: ":53", Net: "tcp"}
-			log.Printf("Started TCP DNS on %s:%d -- listening", "0.0.0.0", 53)
+			log.Infof("Started TCP DNS on %s:%d -- listening", "0.0.0.0", 53)
 			err := serverTCP.ListenAndServe()
 			defer serverTCP.Shutdown()
 			if err != nil {
@@ -266,7 +270,7 @@ func runDNS() {
 			tlsConfig.Certificates = []tls.Certificate{crt}
 
 			serverTLS := &dns.Server{Addr: ":853", Net: "tcp-tls", TLSConfig: tlsConfig}
-			log.Printf("Started DoT on %s:%d -- listening", "0.0.0.0", 853)
+			log.Infof("Started DoT on %s:%d -- listening", "0.0.0.0", 853)
 			err = serverTLS.ListenAndServe()
 			defer serverTLS.Shutdown()
 			if err != nil {
@@ -299,7 +303,7 @@ func runDNS() {
 
 func main() {
 	flag.StringVar(&c.BindIP, "bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
-	flag.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://1.1.1.1:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query")
+	flag.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://8.8.8.8:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query")
 	flag.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.csv")
 	flag.DurationVar(&c.DomainListRefreshInterval.Duration, "domainListRefreshInterval", 60*time.Minute, "Interval to re-fetch the domain list")
 	flag.BoolVar(&c.AllDomains, "allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
@@ -319,9 +323,12 @@ func main() {
 			log.Fatalf("failed to open config file: %s", err.Error())
 		}
 		defer configFile.Close()
-		fileStat, err := configFile.Stat()
+		fileStat, _ := configFile.Stat()
 		configBytes := make([]byte, fileStat.Size())
 		_, err = configFile.Read(configBytes)
+		if err != nil {
+			log.Fatalf("Could not read the config file: %s", err)
+		}
 
 		err = json.Unmarshal(configBytes, &c)
 		if err != nil {
@@ -349,36 +356,12 @@ func main() {
 		c.TLSCert = filepath.Join(os.TempDir(), c.PublicIP+".crt")
 		c.TLSKey = filepath.Join(os.TempDir(), c.PublicIP+".key")
 	}
-
-	// set up upstream DNS clients
-	dnsURL, err := url.Parse(c.UpstreamDNS)
+	var err error
+	c.dnsClient, err = dnsclient.New(c.UpstreamDNS, true)
 	if err != nil {
-		log.Fatalf("Invalid upstream DNS URL: %s", c.UpstreamDNS)
+		log.Fatalln(err)
 	}
-	if dnsURL.Scheme == "quic" {
-		dnsC, err := doqclient.New(dnsURL.Host, true, true)
-		if err != nil {
-			log.Fatalf("Failed to connect to upstream DNS: %s", err.Error())
-		}
-		dnsClient.Doq = dnsC
-	} else if dnsURL.Scheme == "https" {
-		dnsC, err := doh.New(*dnsURL, true, true)
-		if err != nil {
-			log.Fatalf("Failed to connect to upstream DNS: %s", err.Error())
-		}
-		dnsClient.Doh = dnsC
-	} else {
-		dnsC := dns.Client{
-			Net: dnsURL.Scheme,
-		}
-		// this dial is not used and it's only good for testing
-		_, err := dnsC.Dial(dnsURL.Host)
-		if err != nil {
-			log.Fatalf("Failed to connect to upstream DNS: %s", err.Error())
-		}
-		dnsClient.classicDNS = &dnsC
-	}
-
+	defer c.dnsClient.Close()
 	go runHTTP()
 	go runHTTPS()
 	go runDNS()

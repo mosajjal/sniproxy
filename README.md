@@ -14,10 +14,12 @@ Usage of sniproxy:
       --bindDnsOverTls                       enable DNS over TLS as well as UDP
       --bindIP string                        Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0 (default "0.0.0.0")
   -c, --config string                        path to JSON configuration file
-      --domainListPath string                Path to the domain list. eg: /tmp/domainlist.log
-      --domainListRefreshInterval duration   Interval to re-fetch the domain list, default: 1 hour (default 1h0m0s)
-      --publicIP string                      Public IP of the server, reply address of DNS queries (default "YOUR PUBLIC IP")
-      --upstreamDNS string                   Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query (default "udp://1.1.1.1:53")
+      --domainListPath string                Path to the domain list. eg: /tmp/domainlist.csv
+      --domainListRefreshInterval duration   Interval to re-fetch the domain list (default 1h0m0s)
+      --publicIP string                      Public IP of the server, reply address of DNS queries (default "122.57.162.2")
+      --tlsCert string                       Path to the certificate for DoH, DoT and DoQ. eg: /tmp/mycert.pem
+      --tlsKey string                        Path to the certificate key for DoH, DoT and DoQ. eg: /tmp/mycert.key
+      --upstreamDNS string                   Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query (default "udp://8.8.8.8:53")
 ```      
 
 Docker/Podman

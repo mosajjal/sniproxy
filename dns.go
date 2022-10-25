@@ -2,16 +2,15 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/golang-collections/collections/tst"
-	doqclient "github.com/mosajjal/doqd/pkg/client"
-	"github.com/mosajjal/sniproxy/doh"
+	"github.com/mosajjal/dnsclient"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/miekg/dns"
@@ -46,12 +45,6 @@ func inDomainList(fqdn string) bool {
 		}
 	}
 	return true
-}
-
-var dnsClient struct {
-	Doq        doqclient.Client
-	Doh        doh.Client
-	classicDNS *dns.Client
 }
 
 func reverse(s string) string {
@@ -126,30 +119,25 @@ func LoadDomainsCsv(Filename string) (prefix *tst.TernarySearchTree, suffix *tst
 	return prefix, suffix, all
 }
 
-func performExternalQuery(question dns.Question, server string) (*dns.Msg, time.Duration, error) {
-	dnsURL, err := url.Parse(server)
+func performExternalAQuery(fqdn string) ([]dns.RR, time.Duration, error) {
+	if !strings.HasSuffix(fqdn, ".") {
+		fqdn = fqdn + "."
+	}
+
+	msg := dns.Msg{}
+	msg.RecursionDesired = true
+	msg.SetQuestion(fqdn, dns.TypeA)
+	msg.SetEdns0(1232, true)
+	//TODO: context and timeout here
+	res, trr, err := c.dnsClient.Query(context.Background(), &msg)
 	if err != nil {
-		log.Fatalf("[DNS] Invalid upstream DNS URL: %s", server)
+		if err.Error() == "EOF" {
+			log.Infof("[DNS] reconnecting DNS...") //TODO: don't like logging here
+			c.dnsClient.Close()
+			c.dnsClient, err = dnsclient.New(c.UpstreamDNS, true)
+		}
 	}
-	msg := dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Id:               dns.Id(),
-			RecursionDesired: true,
-		},
-		Question: []dns.Question{question},
-	}
-
-	if dnsURL.Scheme == "quic" {
-		rmsg, err := dnsClient.Doq.SendQuery(msg)
-		return &rmsg, 0, err
-
-	}
-	if dnsURL.Scheme == "https" {
-		rmsg, t, err := dnsClient.Doh.SendQuery(msg)
-		return &rmsg, t, err
-
-	}
-	return dnsClient.classicDNS.Exchange(&msg, dnsURL.Host)
+	return res, trr, err
 }
 
 func processQuestion(q dns.Question) ([]dns.RR, error) {
@@ -166,12 +154,12 @@ func processQuestion(q dns.Question) ([]dns.RR, error) {
 	}
 
 	// Otherwise do an upstream query and use that answer.
-	resp, rtt, err := performExternalQuery(q, c.UpstreamDNS)
+	resp, rtt, err := performExternalAQuery(q.Name)
 	if err != nil {
 		return nil, err
 	}
 
 	log.Infof("[DNS] returned origin address for domain: %s, rtt: %s", q.Name, rtt)
 
-	return resp.Answer, nil
+	return resp, nil
 }

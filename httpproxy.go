@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -51,6 +52,14 @@ func runHTTP() {
 }
 
 func handle80(w http.ResponseWriter, r *http.Request) {
+
+	// NOTE: if the URL starts with the public IP, it needs to be skipped to avoid loops
+	if strings.HasPrefix(r.Host, c.PublicIP) {
+		log.Warnf("[HTTP] someone is requesting HTTP to sniproxy itself, ignoring...")
+		http.Error(w, "Could not reach origin server", 404)
+		return
+	}
+
 	log.Infof("[HTTP] REQ: %v %v%v\n", r.Method, r.Host, r.URL)
 
 	// Construct filtered header to send to origin server

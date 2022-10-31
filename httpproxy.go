@@ -54,6 +54,12 @@ func runHTTP() {
 }
 
 func handle80(w http.ResponseWriter, r *http.Request) {
+	if !checkGeoIPSkip(r.RemoteAddr) {
+		http.Error(w, "Could not reach origin server", 403)
+		return
+	} else {
+		log.Infof("Rejected request from %s", r.RemoteAddr)
+	}
 
 	// NOTE: if the URL starts with the public IP, it needs to be skipped to avoid loops
 	if strings.HasPrefix(r.Host, c.PublicIP) {
@@ -103,7 +109,6 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 		// rr.URL = reverseProxyURI
 		hostPort := fmt.Sprintf("%s:%s", reverseProxyURI.Host, reverseProxyURI.Port())
 		rr.URL.Host = reverseProxyURI.Host
-		// BUG: port should be handled here
 		// add the port to the host header
 		rr.Header.Set("Host", hostPort)
 	}

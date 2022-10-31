@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/golang-collections/collections/tst"
 	"github.com/mosajjal/dnsclient"
+	doqserver "github.com/mosajjal/doqd/pkg/server"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/miekg/dns"
@@ -162,4 +165,116 @@ func processQuestion(q dns.Question) ([]dns.RR, error) {
 	log.Infof("[DNS] returned origin address for domain: %s, rtt: %s", q.Name, rtt)
 
 	return resp, nil
+}
+
+func lookupDomain4(domain string) (net.IP, error) {
+	if !strings.HasSuffix(domain, ".") {
+		domain = domain + "."
+	}
+	rAddrDNS, _, err := performExternalAQuery(domain)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	if len(rAddrDNS) > 0 {
+		if rAddrDNS[0].Header().Rrtype == dns.TypeCNAME {
+			return lookupDomain4(rAddrDNS[0].(*dns.CNAME).Target)
+		}
+		if rAddrDNS[0].Header().Rrtype == dns.TypeA {
+			return rAddrDNS[0].(*dns.A).A, nil
+		}
+	} else {
+		return nil, fmt.Errorf("[DNS] Empty DNS response for %s with error %s", domain, err)
+	}
+	return nil, fmt.Errorf("[DNS] Unknown type %s", dns.TypeToString[rAddrDNS[0].Header().Rrtype])
+}
+
+func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
+	m := new(dns.Msg)
+	m.SetReply(r)
+	m.Compress = false
+
+	if r.Opcode != dns.OpcodeQuery {
+		m.SetRcode(r, dns.RcodeNotImplemented)
+		w.WriteMsg(m)
+		return
+	}
+
+	for _, q := range m.Question {
+		answers, err := processQuestion(q)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		m.Answer = append(m.Answer, answers...)
+	}
+
+	w.WriteMsg(m)
+}
+
+func runDNS() {
+	dns.HandleFunc(".", handleDNS)
+	// start DNS UDP serverUdp
+	go func() {
+		serverUDP := &dns.Server{Addr: fmt.Sprintf(":%d", c.DNSPort), Net: "udp"}
+		log.Infof("Started UDP DNS on %s:%d -- listening", "0.0.0.0", c.DNSPort)
+		err := serverUDP.ListenAndServe()
+		defer serverUDP.Shutdown()
+		if err != nil {
+			log.Fatalf("Failed to start server: %s\nYou can run the following command to pinpoint which process is listening on port %d\nsudo ss -pltun -at '( dport = :%d or sport = :%d )'", err.Error(), c.DNSPort, c.DNSPort, c.DNSPort)
+		}
+	}()
+
+	// start DNS UDP serverTcp
+	if c.BindDNSOverTCP {
+		go func() {
+			serverTCP := &dns.Server{Addr: fmt.Sprintf(":%d", c.DNSPort), Net: "tcp"}
+			log.Infof("Started TCP DNS on %s:%d -- listening", "0.0.0.0", c.DNSPort)
+			err := serverTCP.ListenAndServe()
+			defer serverTCP.Shutdown()
+			if err != nil {
+				log.Fatalf("Failed to start server: %s\nYou can run the following command to pinpoint which process is listening on port %d\nsudo ss -pltun -at '( dport = :%d or sport = :%d )'", err.Error(), c.DNSPort, c.DNSPort, c.DNSPort)
+			}
+		}()
+	}
+
+	// start DNS UDP serverTls
+	if c.BindDNSOverTLS {
+		go func() {
+			crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
+			if err != nil {
+				log.Fatalln(err.Error())
+			}
+			tlsConfig := &tls.Config{}
+			tlsConfig.Certificates = []tls.Certificate{crt}
+
+			serverTLS := &dns.Server{Addr: ":853", Net: "tcp-tls", TLSConfig: tlsConfig}
+			log.Infof("Started DoT on %s:%d -- listening", "0.0.0.0", 853)
+			err = serverTLS.ListenAndServe()
+			defer serverTLS.Shutdown()
+			if err != nil {
+				log.Fatalf("Failed to start server: %s\n ", err.Error())
+			}
+		}()
+	}
+
+	if c.BindDNSOverQuic {
+
+		crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
+		if err != nil {
+			log.Fatalln(err.Error())
+		}
+		tlsConfig := &tls.Config{}
+		tlsConfig.Certificates = []tls.Certificate{crt}
+
+		// Create the QUIC listener
+		doqServer, err := doqserver.New(":8853", crt, "127.0.0.1:53", true)
+		if err != nil {
+			log.Fatalln(err.Error())
+		}
+
+		// Accept QUIC connections
+		log.Infof("Starting QUIC listener on %s\n", ":8853")
+		go doqServer.Listen()
+
+	}
 }

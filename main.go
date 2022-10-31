@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -33,18 +35,26 @@ type runConfig struct {
 	AllDomains                bool     `json:"allDomains"`
 	TLSCert                   string   `json:"tlsCert"`
 	TLSKey                    string   `json:"tlsKey"`
+	ReverseProxy              string   `json:"reverseProxy"`
+	ReverseProxyCert          string   `json:"reverseProxyCert"`
+	ReverseProxyKey           string   `json:"reverseProxyKey"`
+	HTTPPort                  uint     `json:"httpPort"`
+	HTTPSPort                 uint     `json:"httpsPort"`
+	DNSPort                   uint     `json:"dnsPort"`
+	Interface                 string   `json:"interface"`
 
 	routePrefixes *tst.TernarySearchTree
 	routeSuffixes *tst.TernarySearchTree
 	routeFQDNs    map[string]uint8
-	dnsClient     dnsclient.Client
+
+	dnsClient  dnsclient.Client
+	sourceAddr net.IP
+
+	reverseProxySNI  string
+	reverseProxyAddr string
 }
 
 var c runConfig
-
-// func handle80(w http.ResponseWriter, r *http.Request) {
-// 	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusFound)
-// }
 
 func pipe(conn1 net.Conn, conn2 net.Conn) {
 	chan1 := getChannel(conn1)
@@ -145,6 +155,23 @@ func lookupDomain4(domain string) (net.IP, error) {
 	return nil, fmt.Errorf("[DNS] Unknown type %s", dns.TypeToString[rAddrDNS[0].Header().Rrtype])
 }
 
+// handle HTTPS connections coming to the reverse proxy. this will get a connction from the handle443 function
+// need to grab the HTTP request from this, and pass it on to the HTTP handler.
+func handleReverse(conn net.Conn) error {
+	log.Infof("[Reverse] connecting to HTTP")
+	// send the reverse conn to local HTTP listner
+	srcAddr := net.TCPAddr{
+		IP:   c.sourceAddr,
+		Port: 0,
+	}
+	target, err := net.DialTCP("tcp", &srcAddr, &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: int(c.HTTPPort)})
+	if err != nil {
+		return err
+	}
+	pipe(conn, target)
+	return nil
+}
+
 func handle443(conn net.Conn) error {
 	defer conn.Close()
 	incoming := make([]byte, 2048)
@@ -165,6 +192,7 @@ func handle443(conn net.Conn) error {
 		return nil
 	}
 	rAddr, err := lookupDomain4(sni)
+	rPort := 443
 	if err != nil || rAddr == nil {
 		log.Warnln(err)
 		return err
@@ -174,8 +202,18 @@ func handle443(conn net.Conn) error {
 		log.Infoln("[TLS] connection to private IP ignored")
 		return nil
 	}
+	// TODO: if SNI is the reverse proxy, this request needs to be handled by a HTTPS handler
+	if sni == c.reverseProxySNI {
+		rAddr = net.IPv4(127, 0, 0, 1)
+		rPort = 65000
+	}
 	log.Infof("[TLS] connecting to %s (%s)", rAddr, sni)
-	target, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: rAddr, Port: 443})
+	// TODO: with the manipulation of the soruce address, we can set the outbound interface
+	srcAddr := net.TCPAddr{
+		IP:   c.sourceAddr,
+		Port: 0,
+	}
+	target, err := net.DialTCP("tcp", &srcAddr, &net.TCPAddr{IP: rAddr, Port: rPort})
 	if err != nil {
 		log.Errorln("could not connect to target", err)
 		conn.Close()
@@ -210,24 +248,48 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	w.WriteMsg(m)
 }
 
-func handleError(err error) {
+func runReverse() {
+	// reverse https can't run on 443. we'll pick a random port and pipe the 443 traffic back to it.
+	cert, err := tls.LoadX509KeyPair(c.ReverseProxyCert, c.ReverseProxyKey)
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalf("server: loadkeys: %s", err)
+	}
+	config := tls.Config{Certificates: []tls.Certificate{cert}}
+	config.Rand = rand.Reader
+	listener, err := tls.Listen("tcp", ":65000", &config)
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("server: accept: %s", err)
+			break
+		}
+		defer conn.Close()
+		tlscon, ok := conn.(*tls.Conn)
+		if ok {
+			state := tlscon.ConnectionState()
+			for _, v := range state.PeerCertificates {
+				log.Print(x509.MarshalPKIXPublicKey(v.PublicKey))
+			}
+		}
+		go handleReverse(conn)
 	}
 }
 
 func runHTTPS() {
-	l, err := net.Listen("tcp", c.BindIP+":443")
 
-	handleError(err)
+	l, err := net.Listen("tcp", c.BindIP+fmt.Sprintf(":%d", c.HTTPSPort))
+	if err != nil {
+		log.Fatalln(err)
+	}
 	defer l.Close()
 	for {
 		c, err := l.Accept()
-		handleError(err)
+		if err != nil {
+			log.Fatalln(err)
+		}
 		go func() {
 			go handle443(c)
 			//TODO: there's a better way to handle TCP timeouts than just a blanket 30 seconds rule
-			// <-time.After(30 * time.Second)
 			// c.Close()
 		}()
 	}
@@ -237,24 +299,24 @@ func runDNS() {
 	dns.HandleFunc(".", handleDNS)
 	// start DNS UDP serverUdp
 	go func() {
-		serverUDP := &dns.Server{Addr: ":53", Net: "udp"}
-		log.Infof("Started UDP DNS on %s:%d -- listening", "0.0.0.0", 53)
+		serverUDP := &dns.Server{Addr: fmt.Sprintf(":%d", c.DNSPort), Net: "udp"}
+		log.Infof("Started UDP DNS on %s:%d -- listening", "0.0.0.0", c.DNSPort)
 		err := serverUDP.ListenAndServe()
 		defer serverUDP.Shutdown()
 		if err != nil {
-			log.Fatalf("Failed to start server: %s\nYou can run the following command to pinpoint which process is listening on port 53\nsudo ss -pltun -at '( dport = :53 or sport = :53 )'", err.Error())
+			log.Fatalf("Failed to start server: %s\nYou can run the following command to pinpoint which process is listening on port %d\nsudo ss -pltun -at '( dport = :%d or sport = :%d )'", err.Error(), c.DNSPort, c.DNSPort, c.DNSPort)
 		}
 	}()
 
 	// start DNS UDP serverTcp
 	if c.BindDNSOverTCP {
 		go func() {
-			serverTCP := &dns.Server{Addr: ":53", Net: "tcp"}
-			log.Infof("Started TCP DNS on %s:%d -- listening", "0.0.0.0", 53)
+			serverTCP := &dns.Server{Addr: fmt.Sprintf(":%d", c.DNSPort), Net: "tcp"}
+			log.Infof("Started TCP DNS on %s:%d -- listening", "0.0.0.0", c.DNSPort)
 			err := serverTCP.ListenAndServe()
 			defer serverTCP.Shutdown()
 			if err != nil {
-				log.Fatalf("Failed to start server: %s\nYou can run the following command to pinpoint which process is listening on port 53\nsudo ss -pltun -at '( dport = :53 or sport = :53 )'", err.Error())
+				log.Fatalf("Failed to start server: %s\nYou can run the following command to pinpoint which process is listening on port %d\nsudo ss -pltun -at '( dport = :%d or sport = :%d )'", err.Error(), c.DNSPort, c.DNSPort, c.DNSPort)
 			}
 		}()
 	}
@@ -314,6 +376,17 @@ func main() {
 	flag.StringVar(&c.TLSCert, "tlsCert", "", "Path to the certificate for DoH, DoT and DoQ. eg: /tmp/mycert.pem")
 	flag.StringVar(&c.TLSKey, "tlsKey", "", "Path to the certificate key for DoH, DoT and DoQ. eg: /tmp/mycert.key")
 
+	// set an domain to be redirected to a real webserver. essentially adding a simple reverse proxy to sniproxy
+	flag.StringVar(&c.ReverseProxy, "reverseProxy", "", "SNI and upstream URL. example: www.example.com::http://126.0.0.1:4001")
+	flag.StringVar(&c.ReverseProxyCert, "reverseProxyCert", "", "Path to the certificate for reverse proxy. eg: /tmp/mycert.pem")
+	flag.StringVar(&c.ReverseProxyKey, "reverseProxyKey", "", "Path to the certificate key for reverse proxy. eg: /tmp/mycert.key")
+
+	flag.UintVar(&c.HTTPPort, "httpPort", 80, "HTTP Port to listen on. Should remain 80 in most cases")
+	flag.UintVar(&c.HTTPSPort, "httpsPort", 443, "HTTPS Port to listen on. Should remain 443 in most cases")
+	flag.UintVar(&c.DNSPort, "dnsPort", 53, "HTTP Port to listen on. Should remain 53 in most cases")
+
+	flag.StringVar(&c.Interface, "interface", "", "Interface used for outbound TLS connections. uses OS prefered one if empty")
+
 	config := flag.StringP("config", "c", "", "path to JSON configuration file")
 
 	flag.Parse()
@@ -356,6 +429,30 @@ func main() {
 		c.TLSCert = filepath.Join(os.TempDir(), c.PublicIP+".crt")
 		c.TLSKey = filepath.Join(os.TempDir(), c.PublicIP+".key")
 	}
+
+	// parse reverseproxy and split it into url and sni
+	if c.ReverseProxy != "" {
+		log.Infof("enablibng a reverse proxy")
+		tmp := strings.Split(c.ReverseProxy, "::")
+		c.reverseProxySNI, c.reverseProxyAddr = tmp[0], tmp[1]
+		go runReverse()
+	}
+
+	// Finds source addr for outbound connections if interface is not empty
+	if c.Interface != "" {
+		log.Infof("Using interface %s", c.Interface)
+		ief, err := net.InterfaceByName(c.Interface)
+		if err != nil {
+			log.Fatal(err)
+		}
+		addrs, err := ief.Addrs()
+		if err != nil {
+			log.Fatal(err)
+		}
+		c.sourceAddr = net.ParseIP(addrs[0].String())
+
+	}
+
 	var err error
 	c.dnsClient, err = dnsclient.New(c.UpstreamDNS, true)
 	if err != nil {

@@ -93,7 +93,7 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: if host is the reverse proxy, this request needs to be handled by the upstream address
+	// if host is the reverse proxy, this request needs to be handled by the upstream address
 	if r.Host == c.reverseProxySNI {
 		reverseProxyURI, err := url.Parse(c.reverseProxyAddr)
 		if err != nil {

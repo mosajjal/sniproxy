@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -41,7 +43,7 @@ func runHTTP() {
 	handler.HandleFunc("/", handle80)
 
 	s := &http.Server{
-		Addr:           ":80",
+		Addr:           fmt.Sprintf(":%d", c.HTTPPort),
 		Handler:        handler,
 		ReadTimeout:    10 * time.Second,
 		WriteTimeout:   10 * time.Second,
@@ -89,6 +91,21 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Could not reach origin server", 403)
 		log.Warnf("[HTTP] a client requested connection to %s, but it's not allowed as per configuration.. sending 403", r.Host)
 		return
+	}
+
+	// if host is the reverse proxy, this request needs to be handled by the upstream address
+	if r.Host == c.reverseProxySNI {
+		reverseProxyURI, err := url.Parse(c.reverseProxyAddr)
+		if err != nil {
+			log.Errorf("failed to parse reverseproxy url: %s", err)
+		}
+		// TODO: maybe this won't work and I need to be more specific
+		// rr.URL = reverseProxyURI
+		hostPort := fmt.Sprintf("%s:%s", reverseProxyURI.Host, reverseProxyURI.Port())
+		rr.URL.Host = reverseProxyURI.Host
+		// BUG: port should be handled here
+		// add the port to the host header
+		rr.Header.Set("Host", hostPort)
 	}
 
 	// Forward request to origin server

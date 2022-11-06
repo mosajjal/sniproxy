@@ -26,7 +26,7 @@ Usage of sniproxy:
       --httpsPort uint                       HTTPS Port to listen on. Should remain 443 in most cases (default 443)
       --interface string                     Interface used for outbound TLS connections. uses OS prefered one if empty
       --publicIP string                      Public IP of the server, reply address of DNS queries (default "")
-      --reverseProxy string                  SNI and upstream URL. example: www.example.com::http://126.0.0.1:4001
+      --reverseProxy string                  SNI and upstream URL. example: www.example.com::http://127.0.0.1:4001
       --reverseProxyCert string              Path to the certificate for reverse proxy. eg: /tmp/mycert.pem
       --reverseProxyKey string               Path to the certificate key for reverse proxy. eg: /tmp/mycert.key
       --tlsCert string                       Path to the certificate for DoH, DoT and DoQ. eg: /tmp/mycert.pem

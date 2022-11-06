@@ -158,7 +158,7 @@ func main() {
 	flag.StringVar(&c.TLSKey, "tlsKey", "", "Path to the certificate key for DoH, DoT and DoQ. eg: /tmp/mycert.key")
 
 	// set an domain to be redirected to a real webserver. essentially adding a simple reverse proxy to sniproxy
-	flag.StringVar(&c.ReverseProxy, "reverseProxy", "", "SNI and upstream URL. example: www.example.com::http://126.0.0.1:4001")
+	flag.StringVar(&c.ReverseProxy, "reverseProxy", "", "SNI and upstream URL. example: www.example.com::http://127.0.0.1:4001")
 	flag.StringVar(&c.ReverseProxyCert, "reverseProxyCert", "", "Path to the certificate for reverse proxy. eg: /tmp/mycert.pem")
 	flag.StringVar(&c.ReverseProxyKey, "reverseProxyKey", "", "Path to the certificate key for reverse proxy. eg: /tmp/mycert.key")
 

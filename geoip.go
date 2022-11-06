@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/oschwald/maxminddb-golang"
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/slices"
+	slog "golang.org/x/exp/slog"
 )
+
+var geolog = slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue("geoip")}}))
 
 func getCountry(ipAddr string) (string, error) {
 	ip := net.ParseIP(ipAddr)
@@ -28,51 +30,54 @@ func getCountry(ipAddr string) (string, error) {
 	return record.Country.ISOCode, nil
 }
 
-func initializeGeoIP() {
+func initializeGeoIP() error {
 
-	log.Info("Loading the domain from file/url")
+	geolog.Info("Loading the domain from file/url")
 	var scanner []byte
 	if strings.HasPrefix(c.GeoIPPath, "http://") || strings.HasPrefix(c.GeoIPPath, "https://") {
-		log.Info("domain list is a URL, trying to fetch")
+		geolog.Info("domain list is a URL, trying to fetch")
 		resp, err := http.Get(c.GeoIPPath)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
-		log.Info("(re)fetching URL: ", c.GeoIPPath)
+		geolog.Info("(re)fetching URL: ", c.GeoIPPath)
 		defer resp.Body.Close()
 		scanner, err = ioutil.ReadAll(resp.Body)
 		if err != nil {
-			panic(err)
+			return err
 		}
 
 	} else {
 		file, err := os.Open(c.GeoIPPath)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
-		log.Info("(re)loading File: ", c.GeoIPPath)
+		geolog.Info("(re)loading File: ", c.GeoIPPath)
 		defer file.Close()
 		n, err := file.Read(scanner)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		} else {
-			log.Infof("read %d bytes", n)
+			geolog.Info("geolocation database loaded", n)
 		}
 
 	}
 	var err error
 	if c.mmdb, err = maxminddb.FromBytes(scanner); err != nil {
-		log.Warnf("%d bytes read, %s", len(scanner), err)
+		//geolog.Warn("%d bytes read, %s", len(scanner), err)
+		return err
 	} else {
-		log.Infof("Loaded MMDB")
+		geolog.Info("Loaded MMDB")
 	}
 	for range time.NewTicker(c.GeoIPRefreshInterval).C {
 		if c.mmdb, err = maxminddb.FromBytes(scanner); err != nil {
-			log.Warnf("%d bytes read, %s", len(scanner), err)
+			//geolog.Warn("%d bytes read, %s", len(scanner), err)
+			return err
 		} else {
-			log.Infof("Loaded MMDB %v", c.mmdb)
+			geolog.Info("Loaded MMDB %v", c.mmdb)
 		}
 	}
+	return nil
 }
 
 // check an IP against exclude and include list and returns if this IP should be included
@@ -89,7 +94,7 @@ func checkGeoIPSkip(ipport string) bool {
 	country, err := getCountry(ip)
 	country = strings.ToLower(country)
 	if err != nil {
-		log.Infof("Failed to get the country of IP %s,%s", ip, country)
+		geolog.Info("Failed to get the geolocation of", "ip", ip, "country", country)
 		return false
 	}
 	if slices.Contains(c.GeoIPExclude, country) {

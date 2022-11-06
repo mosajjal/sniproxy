@@ -7,13 +7,15 @@ import (
 	"fmt"
 	"net"
 
-	log "github.com/sirupsen/logrus"
+	slog "golang.org/x/exp/slog"
 )
+
+var httpslog = slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue("https")}}))
 
 // handle HTTPS connections coming to the reverse proxy. this will get a connction from the handle443 function
 // need to grab the HTTP request from this, and pass it on to the HTTP handler.
 func handleReverse(conn net.Conn) error {
-	log.Infof("[Reverse] connecting to HTTP")
+	httpslog.Info("connecting to HTTP")
 	// send the reverse conn to local HTTP listner
 	srcAddr := net.TCPAddr{
 		IP:   c.sourceAddr,
@@ -30,7 +32,7 @@ func handleReverse(conn net.Conn) error {
 func handle443(conn net.Conn) error {
 
 	if !checkGeoIPSkip(conn.RemoteAddr().String()) {
-		log.Warnf("Rejected request from %s", conn.RemoteAddr().String())
+		httpslog.Warn("Rejected request due to GEOIP restriction", "ip", conn.RemoteAddr().String())
 		conn.Close()
 		return nil
 	}
@@ -39,29 +41,29 @@ func handle443(conn net.Conn) error {
 	incoming := make([]byte, 2048)
 	n, err := conn.Read(incoming)
 	if err != nil {
-		log.Errorln(err)
+		httpslog.Error("", err)
 		return err
 	}
 	sni, err := GetHostname(incoming)
 	if err != nil {
-		log.Errorln(err)
+		httpslog.Error("", err)
 		return err
 	}
 	// check SNI against domainlist for an extra layer of security
 	if !c.AllDomains && inDomainList(sni+".") {
-		log.Warnf("[TCP] a client requested connection to %s, but it's not allowed as per configuration.. resetting TCP", sni)
+		httpslog.Warn("a client requested connection to " + sni + ", but it's not allowed as per configuration.. resetting TCP")
 		conn.Close()
 		return nil
 	}
 	rAddr, err := lookupDomain4(sni)
 	rPort := 443
 	if err != nil || rAddr == nil {
-		log.Warnln(err)
+		httpslog.Warn(err.Error())
 		return err
 	}
 	// TODO: handle timeout and context here
 	if rAddr.IsLoopback() || rAddr.IsPrivate() || rAddr.Equal(net.IPv4(0, 0, 0, 0)) {
-		log.Infoln("[TLS] connection to private IP ignored")
+		httpslog.Info("connection to private IP ignored")
 		return nil
 	}
 	// TODO: if SNI is the reverse proxy, this request needs to be handled by a HTTPS handler
@@ -69,7 +71,7 @@ func handle443(conn net.Conn) error {
 		rAddr = net.IPv4(127, 0, 0, 1)
 		rPort = 65000
 	}
-	log.Infof("[TLS] connecting to %s (%s)", rAddr, sni)
+	httpslog.Info("establishing connection", "remote_ip", rAddr, "host", sni)
 	// TODO: with the manipulation of the soruce address, we can set the outbound interface
 	srcAddr := net.TCPAddr{
 		IP:   c.sourceAddr,
@@ -77,7 +79,7 @@ func handle443(conn net.Conn) error {
 	}
 	target, err := net.DialTCP("tcp", &srcAddr, &net.TCPAddr{IP: rAddr, Port: rPort})
 	if err != nil {
-		log.Errorln("could not connect to target", err)
+		httpslog.Error("could not connect to target", err)
 		conn.Close()
 		return err
 	}
@@ -91,15 +93,18 @@ func runReverse() {
 	// reverse https can't run on 443. we'll pick a random port and pipe the 443 traffic back to it.
 	cert, err := tls.LoadX509KeyPair(c.ReverseProxyCert, c.ReverseProxyKey)
 	if err != nil {
-		log.Fatalf("server: loadkeys: %s", err)
+		httpslog.Error("", err)
 	}
 	config := tls.Config{Certificates: []tls.Certificate{cert}}
 	config.Rand = rand.Reader
 	listener, err := tls.Listen("tcp", ":65000", &config)
+	if err != nil {
+		httpslog.Error("", err)
+	}
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Printf("server: accept: %s", err)
+			httpslog.Error("", err)
 			break
 		}
 		defer conn.Close()
@@ -107,7 +112,7 @@ func runReverse() {
 		if ok {
 			state := tlscon.ConnectionState()
 			for _, v := range state.PeerCertificates {
-				log.Print(x509.MarshalPKIXPublicKey(v.PublicKey))
+				fmt.Println(x509.MarshalPKIXPublicKey(v.PublicKey))
 			}
 		}
 		go handleReverse(conn)
@@ -118,13 +123,13 @@ func runHTTPS() {
 
 	l, err := net.Listen("tcp", c.BindIP+fmt.Sprintf(":%d", c.HTTPSPort))
 	if err != nil {
-		log.Fatalln(err)
+		httpslog.Error("", err)
 	}
 	defer l.Close()
 	for {
 		c, err := l.Accept()
 		if err != nil {
-			log.Fatalln(err)
+			httpslog.Error("", err)
 		}
 		go func() {
 			go handle443(c)

@@ -36,3 +36,5 @@ require (
 	golang.org/x/tools v0.2.0 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 )
+
+replace github.com/mosajjal/dnsclient v0.1.0 => /home/ali/git/dnsclient

@@ -104,6 +104,7 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 		reverseProxyURI, err := url.Parse(c.reverseProxyAddr)
 		if err != nil {
 			httplog.Error("failed to parse reverseproxy url", err)
+
 		}
 		// TODO: maybe this won't work and I need to be more specific
 		// rr.URL = reverseProxyURI

@@ -1,6 +1,10 @@
 package main
 
 import (
+
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -61,6 +65,7 @@ type runConfig struct {
 var c runConfig
 
 var log = slog.New(slog.NewTextHandler(os.Stderr))
+
 
 func pipe(conn1 net.Conn, conn2 net.Conn) {
 	chan1 := getChannel(conn1)
@@ -136,9 +141,201 @@ func getPublicIPInner() (string, error) {
 		}
 
 		if externalIP != "" {
+
 			return externalIP, nil
 		}
 		log.Error("Could not automatically find the public IP address. Please specify it in the configuration.", nil)
+
+
+	}
+	return ""
+
+}
+
+func lookupDomain4(domain string) (net.IP, error) {
+	if !strings.HasSuffix(domain, ".") {
+		domain = domain + "."
+	}
+	rAddrDNS, _, err := performExternalAQuery(domain)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	if len(rAddrDNS) > 0 {
+		if rAddrDNS[0].Header().Rrtype == dns.TypeCNAME {
+			return lookupDomain4(rAddrDNS[0].(*dns.CNAME).Target)
+		}
+		if rAddrDNS[0].Header().Rrtype == dns.TypeA {
+			return rAddrDNS[0].(*dns.A).A, nil
+		}
+	} else {
+		return nil, fmt.Errorf("[DNS] Empty DNS response for %s with error %s", domain, err)
+	}
+	return nil, fmt.Errorf("[DNS] Unknown type %s", dns.TypeToString[rAddrDNS[0].Header().Rrtype])
+}
+
+// handle HTTPS connections coming to the reverse proxy. this will get a connction from the handle443 function
+// need to grab the HTTP request from this, and pass it on to the HTTP handler.
+func handleReverse(conn net.Conn) error {
+	log.Infof("[Reverse] connecting to HTTP")
+	// send the reverse conn to local HTTP listner
+	srcAddr := net.TCPAddr{
+		IP:   c.sourceAddr,
+		Port: 0,
+	}
+	target, err := net.DialTCP("tcp", &srcAddr, &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: int(c.HTTPPort)})
+	if err != nil {
+		return err
+	}
+	pipe(conn, target)
+	return nil
+}
+
+func handle443(conn net.Conn) error {
+	defer conn.Close()
+	incoming := make([]byte, 2048)
+	n, err := conn.Read(incoming)
+	if err != nil {
+		log.Errorln(err)
+		return err
+	}
+	sni, err := GetHostname(incoming)
+	if err != nil {
+		log.Errorln(err)
+		return err
+	}
+	// check SNI against domainlist for an extra layer of security
+	if !c.AllDomains && inDomainList(sni+".") {
+		log.Warnf("[TCP] a client requested connection to %s, but it's not allowed as per configuration.. resetting TCP", sni)
+		conn.Close()
+		return nil
+	}
+	rAddr, err := lookupDomain4(sni)
+	rPort := 443
+	if err != nil || rAddr == nil {
+		log.Warnln(err)
+		return err
+	}
+	// TODO: handle timeout and context here
+	if rAddr.IsLoopback() || rAddr.IsPrivate() || rAddr.Equal(net.IPv4(0, 0, 0, 0)) {
+		log.Infoln("[TLS] connection to private IP ignored")
+		return nil
+	}
+	// if SNI is the reverse proxy, this request needs to be handled by a HTTPS handler
+	if sni == c.reverseProxySNI {
+		rAddr = net.IPv4(127, 0, 0, 1)
+		rPort = 65000
+	}
+	log.Infof("[TLS] connecting to %s (%s)", rAddr, sni)
+	// with the manipulation of the soruce address, we can set the outbound interface
+	srcAddr := net.TCPAddr{
+		IP:   c.sourceAddr,
+		Port: 0,
+	}
+	target, err := net.DialTCP("tcp", &srcAddr, &net.TCPAddr{IP: rAddr, Port: rPort})
+	if err != nil {
+		log.Errorln("could not connect to target", err)
+		conn.Close()
+		return err
+	}
+	defer target.Close()
+	target.Write(incoming[:n])
+	pipe(conn, target)
+	return nil
+}
+
+func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
+	m := new(dns.Msg)
+	m.SetReply(r)
+	m.Compress = false
+
+	if r.Opcode != dns.OpcodeQuery {
+		m.SetRcode(r, dns.RcodeNotImplemented)
+		w.WriteMsg(m)
+		return
+	}
+
+	for _, q := range m.Question {
+		answers, err := processQuestion(q)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		m.Answer = append(m.Answer, answers...)
+	}
+
+	w.WriteMsg(m)
+}
+
+func runReverse() {
+	// reverse https can't run on 443. we'll pick a random port and pipe the 443 traffic back to it.
+	cert, err := tls.LoadX509KeyPair(c.ReverseProxyCert, c.ReverseProxyKey)
+	if err != nil {
+		log.Fatalf("server: loadkeys: %s", err)
+	}
+	config := tls.Config{Certificates: []tls.Certificate{cert}}
+	config.Rand = rand.Reader
+	listener, err := tls.Listen("tcp", ":65000", &config)
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("server: accept: %s", err)
+			break
+		}
+		defer conn.Close()
+		tlscon, ok := conn.(*tls.Conn)
+		if ok {
+			state := tlscon.ConnectionState()
+			for _, v := range state.PeerCertificates {
+				log.Print(x509.MarshalPKIXPublicKey(v.PublicKey))
+			}
+		}
+		go handleReverse(conn)
+	}
+}
+
+func runHTTPS() {
+
+	l, err := net.Listen("tcp", c.BindIP+fmt.Sprintf(":%d", c.HTTPSPort))
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer l.Close()
+	for {
+		c, err := l.Accept()
+		if err != nil {
+			log.Fatalln(err)
+		}
+		go func() {
+			go handle443(c)
+			// c.Close()
+		}()
+	}
+}
+
+func runDNS() {
+	dns.HandleFunc(".", handleDNS)
+	// start DNS UDP serverUdp
+	go func() {
+		serverUDP := &dns.Server{Addr: fmt.Sprintf(":%d", c.DNSPort), Net: "udp"}
+		log.Infof("Started UDP DNS on %s:%d -- listening", "0.0.0.0", c.DNSPort)
+		err := serverUDP.ListenAndServe()
+		defer serverUDP.Shutdown()
+		if err != nil {
+			log.Fatalf("Failed to start server: %s\nYou can run the following command to pinpoint which process is listening on port %d\nsudo ss -pltun -at '( dport = :%d or sport = :%d )'", err.Error(), c.DNSPort, c.DNSPort, c.DNSPort)
+		}
+	}()
+
+	// start DNS UDP serverTcp
+	if c.BindDNSOverTCP {
+		go func() {
+			serverTCP := &dns.Server{Addr: fmt.Sprintf(":%d", c.DNSPort), Net: "tcp"}
+			log.Infof("Started TCP DNS on %s:%d -- listening", "0.0.0.0", c.DNSPort)
+			err := serverTCP.ListenAndServe()
+			defer serverTCP.Shutdown()
+			if err != nil {
+				log.Fatalf("Failed to start server: %s\nYou can run the following command to pinpoint which process is listening on port %d\nsudo ss -pltun -at '( dport = :%d or sport = :%d )'", err.Error(), c.DNSPort, c.DNSPort, c.DNSPort)
+			}
+		}()
 	}
 	return "", fmt.Errorf("Can't determine the public IP")
 
@@ -167,6 +364,7 @@ func main() {
 	flag.DurationVar(&c.GeoIPRefreshInterval, "geoipRefreshInterval", time.Hour, "MMDB refresh interval")
 	flag.StringSliceVar(&c.GeoIPExclude, "geoipExclude", []string{""}, "Exclude countries to be allowed to connect. example: US,CA")
 	flag.StringSliceVar(&c.GeoIPInclude, "geoipInclude", []string{""}, "Include countries to be allowed to connect. example: US,CA")
+
 
 	flag.UintVar(&c.HTTPPort, "httpPort", 80, "HTTP Port to listen on. Should remain 80 in most cases")
 	flag.UintVar(&c.HTTPSPort, "httpsPort", 443, "HTTPS Port to listen on. Should remain 443 in most cases")
@@ -220,6 +418,7 @@ func main() {
 	// parse reverseproxy and split it into url and sni
 	if c.ReverseProxy != "" {
 		log.Info("enablibng a reverse proxy")
+
 		tmp := strings.Split(c.ReverseProxy, "::")
 		c.reverseProxySNI, c.reverseProxyAddr = tmp[0], tmp[1]
 		go runReverse()
@@ -244,6 +443,7 @@ func main() {
 		addrs, err := ief.Addrs()
 		if err != nil {
 			log.Error("", err)
+
 		}
 		c.sourceAddr = net.ParseIP(addrs[0].String())
 

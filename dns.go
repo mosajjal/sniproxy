@@ -3,15 +3,19 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-collections/collections/tst"
 	"github.com/mosajjal/dnsclient"
-	log "github.com/sirupsen/logrus"
+	doqserver "github.com/mosajjal/doqd/pkg/server"
+	slog "golang.org/x/exp/slog"
 
 	"github.com/miekg/dns"
 )
@@ -21,6 +25,8 @@ var (
 	matchSuffix = uint8(2)
 	matchFQDN   = uint8(3)
 )
+
+var dnslog = slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue("dns")}}))
 
 // inDomainList returns true if the domain is meant to be SKIPPED and not go through sni proxy
 // todo: this needs to be replaced by a few tst
@@ -59,14 +65,14 @@ func reverse(s string) string {
 // 1. a TST for all the prefixes (type 1)
 // 2. a TST for all the suffixes (type 2)
 // 3. a hashtable for all the full match fqdn (type 3)
-func LoadDomainsCsv(Filename string) (prefix *tst.TernarySearchTree, suffix *tst.TernarySearchTree, all map[string]uint8) {
-	prefix = tst.New()
-	suffix = tst.New()
-	all = make(map[string]uint8)
-	log.Info("Loading the domain from file/url")
+func LoadDomainsCsv(Filename string) (*tst.TernarySearchTree, *tst.TernarySearchTree, map[string]uint8, error) {
+	prefix := tst.New()
+	suffix := tst.New()
+	all := make(map[string]uint8)
+	dnslog.Info("Loading the domain from file/url")
 	var scanner *bufio.Scanner
 	if strings.HasPrefix(Filename, "http://") || strings.HasPrefix(Filename, "https://") {
-		log.Info("domain list is a URL, trying to fetch")
+		dnslog.Info("domain list is a URL, trying to fetch")
 		client := http.Client{
 			CheckRedirect: func(r *http.Request, via []*http.Request) error {
 				r.URL.Opaque = r.URL.Path
@@ -75,28 +81,31 @@ func LoadDomainsCsv(Filename string) (prefix *tst.TernarySearchTree, suffix *tst
 		}
 		resp, err := client.Get(Filename)
 		if err != nil {
-			log.Fatal(err)
+			//dnslog.Fatal(err)
+			dnslog.Error("", err)
+			return prefix, suffix, all, err
 		}
-		log.Info("(re)fetching URL: ", Filename)
+		dnslog.Info("(re)fetching URL: ", Filename)
 		defer resp.Body.Close()
 		scanner = bufio.NewScanner(resp.Body)
 
 	} else {
 		file, err := os.Open(Filename)
 		if err != nil {
-			log.Fatal(err)
+			return prefix, suffix, all, err
 		}
-		log.Info("(re)loading File: ", Filename)
+		dnslog.Info("(re)loading File: ", Filename)
 		defer file.Close()
 		scanner = bufio.NewScanner(file)
 	}
 
 	for scanner.Scan() {
 		lowerCaseLine := strings.ToLower(scanner.Text())
-		// split the line by comma to understand the logic
+		// split the line by comma to understand thednslog.c
 		fqdn := strings.Split(lowerCaseLine, ",")
 		if len(fqdn) != 2 {
-			log.Warnf("%s is not a valid line, assuming fqdn", lowerCaseLine)
+			//dnslog.Warnf("%s is not a valid line, assuming fqdn", lowerCaseLine)
+			dnslog.Info(lowerCaseLine + " is not a valid line, assuming FQDN")
 			fqdn = []string{lowerCaseLine, "fqdn"}
 		}
 		// add the fqdn to the hashtable with its type
@@ -111,13 +120,17 @@ func LoadDomainsCsv(Filename string) (prefix *tst.TernarySearchTree, suffix *tst
 		case "fqdn":
 			all[fqdn[0]] = matchFQDN
 		default:
-			log.Warnf("%s is not a valid line, assuming fqdn", lowerCaseLine)
+			//dnslog.Warnf("%s is not a valid line, assuming fqdn", lowerCaseLine)
+			dnslog.Info(lowerCaseLine + " is not a valid line, assuming FQDN")
 			all[fqdn[0]] = matchFQDN
 		}
 	}
-	log.Infof("%s loaded with %d prefix, %d suffix and %d fqdn", Filename, prefix.Len(), suffix.Len(), len(all)-prefix.Len()-suffix.Len())
-	return prefix, suffix, all
+	dnslog.Info(fmt.Sprintf("%s loaded with %d prefix, %d suffix and %d fqdn", Filename, prefix.Len(), suffix.Len(), len(all)-prefix.Len()-suffix.Len()))
+
+	return prefix, suffix, all, nil
 }
+
+var dnsLock sync.RWMutex
 
 func performExternalAQuery(fqdn string) ([]dns.RR, time.Duration, error) {
 	if !strings.HasSuffix(fqdn, ".") {
@@ -128,15 +141,16 @@ func performExternalAQuery(fqdn string) ([]dns.RR, time.Duration, error) {
 	msg.RecursionDesired = true
 	msg.SetQuestion(fqdn, dns.TypeA)
 	msg.SetEdns0(1232, true)
-	//TODO: context and timeout here
+	dnsLock.Lock()
 	res, trr, err := c.dnsClient.Query(context.Background(), &msg)
 	if err != nil {
 		if err.Error() == "EOF" {
-			log.Infof("[DNS] reconnecting DNS...") //TODO: don't like logging here
+			dnslog.Info("reconnecting DNS...")
 			c.dnsClient.Close()
 			c.dnsClient, err = dnsclient.New(c.UpstreamDNS, true)
 		}
 	}
+	dnsLock.Unlock()
 	return res, trr, err
 }
 
@@ -148,7 +162,7 @@ func processQuestion(q dns.Question) ([]dns.RR, error) {
 			return nil, err
 		}
 
-		log.Infof("[DNS] returned sniproxy address for domain: %s", q.Name)
+		dnslog.Info("returned sniproxy address for domain", "fqdn", q.Name)
 
 		return []dns.RR{rr}, nil
 	}
@@ -159,7 +173,124 @@ func processQuestion(q dns.Question) ([]dns.RR, error) {
 		return nil, err
 	}
 
-	log.Infof("[DNS] returned origin address for domain: %s, rtt: %s", q.Name, rtt)
+	dnslog.Info("[DNS] returned origin address", "fqdn", q.Name, "rtt", rtt)
 
 	return resp, nil
+}
+
+func lookupDomain4(domain string) (net.IP, error) {
+	if !strings.HasSuffix(domain, ".") {
+		domain = domain + "."
+	}
+	rAddrDNS, _, err := performExternalAQuery(domain)
+	if err != nil {
+		return nil, err
+	}
+	if len(rAddrDNS) > 0 {
+		if rAddrDNS[0].Header().Rrtype == dns.TypeCNAME {
+			return lookupDomain4(rAddrDNS[0].(*dns.CNAME).Target)
+		}
+		if rAddrDNS[0].Header().Rrtype == dns.TypeA {
+			return rAddrDNS[0].(*dns.A).A, nil
+		}
+	} else {
+		return nil, fmt.Errorf("[DNS] Empty DNS response for %s with error %s", domain, err)
+	}
+	return nil, fmt.Errorf("[DNS] Unknown type %s", dns.TypeToString[rAddrDNS[0].Header().Rrtype])
+}
+
+func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
+	m := new(dns.Msg)
+	m.SetReply(r)
+	m.Compress = false
+
+	if r.Opcode != dns.OpcodeQuery {
+		m.SetRcode(r, dns.RcodeNotImplemented)
+		w.WriteMsg(m)
+		return
+	}
+
+	for _, q := range m.Question {
+		answers, err := processQuestion(q)
+		if err != nil {
+			dnslog.Error("", err)
+			continue
+		}
+		m.Answer = append(m.Answer, answers...)
+	}
+
+	w.WriteMsg(m)
+}
+
+func runDNS() {
+	dns.HandleFunc(".", handleDNS)
+	// start DNS UDP serverUdp
+	go func() {
+		serverUDP := &dns.Server{Addr: fmt.Sprintf(":%d", c.DNSPort), Net: "udp"}
+		dnslog.Info("Started UDP DNS", "host", "0.0.0.0", "port", c.DNSPort)
+		err := serverUDP.ListenAndServe()
+		defer serverUDP.Shutdown()
+		if err != nil {
+			dnslog.Error("Error starting UDP DNS server", err)
+			dnslog.Info(fmt.Sprintf("Failed to start server: %s\nYou can run the following command to pinpoint which process is listening on port %d\nsudo ss -pltun -at '( dport = :%d or sport = :%d )'", err.Error(), c.DNSPort, c.DNSPort, c.DNSPort))
+			panic(2)
+		}
+	}()
+
+	// start DNS UDP serverTcp
+	if c.BindDNSOverTCP {
+		go func() {
+			serverTCP := &dns.Server{Addr: fmt.Sprintf(":%d", c.DNSPort), Net: "tcp"}
+			dnslog.Info("Started TCP DNS", "host", "0.0.0.0", "port", c.DNSPort)
+			err := serverTCP.ListenAndServe()
+			defer serverTCP.Shutdown()
+			if err != nil {
+				dnslog.Error("Failed to start server", err)
+				dnslog.Info(fmt.Sprintf("You can run the following command to pinpoint which process is listening on port %d\nsudo ss -pltun -at '( dport = :%d or sport = :%d )'", c.DNSPort, c.DNSPort, c.DNSPort))
+			}
+		}()
+	}
+
+	// start DNS UDP serverTls
+	if c.BindDNSOverTLS {
+		go func() {
+			crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
+			if err != nil {
+				dnslog.Error("", err)
+				panic(2)
+
+			}
+			tlsConfig := &tls.Config{}
+			tlsConfig.Certificates = []tls.Certificate{crt}
+
+			serverTLS := &dns.Server{Addr: ":853", Net: "tcp-tls", TLSConfig: tlsConfig}
+			dnslog.Info("Started DoT DNS", "host", "0.0.0.0", "port", 853)
+			err = serverTLS.ListenAndServe()
+			defer serverTLS.Shutdown()
+			if err != nil {
+				dnslog.Error("", err)
+			}
+		}()
+	}
+
+	if c.BindDNSOverQuic {
+
+		crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
+		if err != nil {
+			dnslog.Error("", err)
+		}
+		tlsConfig := &tls.Config{}
+		tlsConfig.Certificates = []tls.Certificate{crt}
+
+		// Create the QUIC listener
+		doqServer, err := doqserver.New(":8853", crt, "127.0.0.1:53", true)
+		if err != nil {
+			dnslog.Error("", err)
+		}
+
+		// Accept QUIC connections
+		dnslog.Info("Starting QUIC listener on :8853")
+		go doqServer.Listen()
+
+	}
 }

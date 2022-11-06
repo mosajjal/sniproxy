@@ -1,12 +1,13 @@
 package main
 
 import (
+
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -16,11 +17,11 @@ import (
 
 	"github.com/golang-collections/collections/tst"
 	"github.com/mosajjal/dnsclient"
-	doqserver "github.com/mosajjal/doqd/pkg/server"
+	"github.com/oschwald/maxminddb-golang"
 	flag "github.com/spf13/pflag"
 
 	"github.com/miekg/dns"
-	log "github.com/sirupsen/logrus"
+	slog "golang.org/x/exp/slog"
 )
 
 type runConfig struct {
@@ -47,6 +48,13 @@ type runConfig struct {
 	routeSuffixes *tst.TernarySearchTree
 	routeFQDNs    map[string]uint8
 
+	GeoIPPath            string        `json:"geoipPath"`
+	GeoIPRefreshInterval time.Duration `json:"geoipRefreshInterval"`
+	GeoIPInclude         []string      `json:"geoipInclude"`
+	GeoIPExclude         []string      `json:"geoipExculde"`
+
+	mmdb *maxminddb.Reader
+
 	dnsClient  dnsclient.Client
 	sourceAddr net.IP
 
@@ -55,6 +63,9 @@ type runConfig struct {
 }
 
 var c runConfig
+
+var log = slog.New(slog.NewTextHandler(os.Stderr))
+
 
 func pipe(conn1 net.Conn, conn2 net.Conn) {
 	chan1 := getChannel(conn1)
@@ -96,20 +107,25 @@ func getChannel(conn net.Conn) chan []byte {
 }
 
 func getPublicIP() string {
+	pub, _ := getPublicIPInner()
+	return pub
+}
+
+func getPublicIPInner() (string, error) {
 	conn, _ := net.Dial("udp", "8.8.8.8:53")
 	defer conn.Close()
 	localAddr := conn.LocalAddr().String()
 	idx := strings.LastIndex(localAddr, ":")
 	ipaddr := localAddr[0:idx]
 	if !net.ParseIP(ipaddr).IsPrivate() {
-		return ipaddr
+		return ipaddr, nil
 	}
 	externalIP := ""
 	// trying to get the public IP from multiple sources to see if they match.
 	resp, err := http.Get("https://myexternalip.com/raw")
 	if err == nil {
 		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		if err == nil {
 			externalIP = string(body)
 		}
@@ -119,15 +135,17 @@ func getPublicIP() string {
 			// dig +short myip.opendns.com @208.67.222.222
 			dnsRes, _, err := performExternalAQuery("myip.opendns.com.")
 			if err != nil {
-				return err.Error()
+				return "", err
 			}
 			externalIP = dnsRes[0].(*dns.A).A.String()
 		}
 
 		if externalIP != "" {
-			return externalIP
+
+			return externalIP, nil
 		}
-		log.Fatalf("Could not automatically find the public IP address. Please specify it in the configuration.")
+		log.Error("Could not automatically find the public IP address. Please specify it in the configuration.", nil)
+
 
 	}
 	return ""
@@ -319,47 +337,8 @@ func runDNS() {
 			}
 		}()
 	}
+	return "", fmt.Errorf("Can't determine the public IP")
 
-	// start DNS UDP serverTls
-	if c.BindDNSOverTLS {
-		go func() {
-			crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
-			if err != nil {
-				log.Fatalln(err.Error())
-			}
-			tlsConfig := &tls.Config{}
-			tlsConfig.Certificates = []tls.Certificate{crt}
-
-			serverTLS := &dns.Server{Addr: ":853", Net: "tcp-tls", TLSConfig: tlsConfig}
-			log.Infof("Started DoT on %s:%d -- listening", "0.0.0.0", 853)
-			err = serverTLS.ListenAndServe()
-			defer serverTLS.Shutdown()
-			if err != nil {
-				log.Fatalf("Failed to start server: %s\n ", err.Error())
-			}
-		}()
-	}
-
-	if c.BindDNSOverQuic {
-
-		crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
-		if err != nil {
-			log.Fatalln(err.Error())
-		}
-		tlsConfig := &tls.Config{}
-		tlsConfig.Certificates = []tls.Certificate{crt}
-
-		// Create the QUIC listener
-		doqServer, err := doqserver.New(":8853", crt, "127.0.0.1:53", true)
-		if err != nil {
-			log.Fatalln(err.Error())
-		}
-
-		// Accept QUIC connections
-		log.Infof("Starting QUIC listener on %s\n", ":8853")
-		go doqServer.Listen()
-
-	}
 }
 
 func main() {
@@ -380,6 +359,13 @@ func main() {
 	flag.StringVar(&c.ReverseProxyCert, "reverseProxyCert", "", "Path to the certificate for reverse proxy. eg: /tmp/mycert.pem")
 	flag.StringVar(&c.ReverseProxyKey, "reverseProxyKey", "", "Path to the certificate key for reverse proxy. eg: /tmp/mycert.key")
 
+	// geoip helper to limit client countries
+	flag.StringVar(&c.GeoIPPath, "geoipPath", "", "path to MMDB URL/path\nExample: https://raw.githubusercontent.com/Loyalsoldier/geoip/release/Country.mmdb")
+	flag.DurationVar(&c.GeoIPRefreshInterval, "geoipRefreshInterval", time.Hour, "MMDB refresh interval")
+	flag.StringSliceVar(&c.GeoIPExclude, "geoipExclude", []string{""}, "Exclude countries to be allowed to connect. example: US,CA")
+	flag.StringSliceVar(&c.GeoIPInclude, "geoipInclude", []string{""}, "Include countries to be allowed to connect. example: US,CA")
+
+
 	flag.UintVar(&c.HTTPPort, "httpPort", 80, "HTTP Port to listen on. Should remain 80 in most cases")
 	flag.UintVar(&c.HTTPSPort, "httpsPort", 443, "HTTPS Port to listen on. Should remain 443 in most cases")
 	flag.UintVar(&c.DNSPort, "dnsPort", 53, "HTTP Port to listen on. Should remain 53 in most cases")
@@ -392,38 +378,38 @@ func main() {
 	if *config != "" {
 		configFile, err := os.Open(*config)
 		if err != nil {
-			log.Fatalf("failed to open config file: %s", err.Error())
+			log.Error("failed to open config file", err)
 		}
 		defer configFile.Close()
 		fileStat, _ := configFile.Stat()
 		configBytes := make([]byte, fileStat.Size())
 		_, err = configFile.Read(configBytes)
 		if err != nil {
-			log.Fatalf("Could not read the config file: %s", err)
+			log.Error("Could not read the config file", err)
 		}
 
 		err = json.Unmarshal(configBytes, &c)
 		if err != nil {
-			log.Fatalf("failed to parse config file: %s", err.Error())
+			log.Error("failed to parse config file", err)
 		}
 	}
 
 	if c.DomainListPath == "" {
-		log.Warnf("Domain list (--domainListPath) is not specified, routing ALL domains through the SNI proxy")
+		log.Warn("Domain list (--domainListPath) is not specified, routing ALL domains through the SNI proxy")
 		c.AllDomains = true
 	}
 	if c.PublicIP != "" {
-		log.Infof("Using Public IP: %s", c.PublicIP)
+		log.Info("server info", "public_ip", c.PublicIP)
 	} else {
-		log.Fatalf("Could not automatically determine public IP. you should provide it manually using --publicIP")
+		log.Error("Could not automatically determine public IP. you should provide it manually using --publicIP", nil)
 	}
 
 	// generate self-signed certificate if not provided
 	if c.TLSCert == "" && c.TLSKey == "" {
 		_, _, err := GenerateSelfSignedCertKey(c.PublicIP, nil, nil, os.TempDir())
-		log.Infof("Certificate was not provided, using a self signed cert")
+		log.Info("Certificate was not provided, using a self signed cert")
 		if err != nil {
-			log.Fatal("fatal Error: ", err)
+			log.Error("Error while generating self-signed cert: ", err)
 		}
 		c.TLSCert = filepath.Join(os.TempDir(), c.PublicIP+".crt")
 		c.TLSKey = filepath.Join(os.TempDir(), c.PublicIP+".key")
@@ -431,22 +417,33 @@ func main() {
 
 	// parse reverseproxy and split it into url and sni
 	if c.ReverseProxy != "" {
-		log.Infof("enablibng a reverse proxy")
+		log.Info("enablibng a reverse proxy")
+
 		tmp := strings.Split(c.ReverseProxy, "::")
 		c.reverseProxySNI, c.reverseProxyAddr = tmp[0], tmp[1]
 		go runReverse()
 	}
 
+	// load mmdb if provided
+	if c.GeoIPPath != "" {
+		go initializeGeoIP()
+		c.GeoIPExclude = toLowerSlice(c.GeoIPExclude)
+		log.Info("GeoIP", "exclude", c.GeoIPExclude)
+		c.GeoIPInclude = toLowerSlice(c.GeoIPInclude)
+		log.Info("GeoIP", "include", c.GeoIPInclude)
+	}
+
 	// Finds source addr for outbound connections if interface is not empty
 	if c.Interface != "" {
-		log.Infof("Using interface %s", c.Interface)
+		log.Info("Using", "interface", c.Interface)
 		ief, err := net.InterfaceByName(c.Interface)
 		if err != nil {
-			log.Fatal(err)
+			log.Error("", err)
 		}
 		addrs, err := ief.Addrs()
 		if err != nil {
-			log.Fatal(err)
+			log.Error("", err)
+
 		}
 		c.sourceAddr = net.ParseIP(addrs[0].String())
 
@@ -455,7 +452,7 @@ func main() {
 	var err error
 	c.dnsClient, err = dnsclient.New(c.UpstreamDNS, true)
 	if err != nil {
-		log.Fatalln(err)
+		log.Error("", err)
 	}
 	defer c.dnsClient.Close()
 	go runHTTP()
@@ -464,11 +461,18 @@ func main() {
 
 	// fetch domain list and refresh them periodically
 	if !c.AllDomains {
-		c.routePrefixes, c.routeSuffixes, c.routeFQDNs = LoadDomainsCsv(c.DomainListPath)
+		c.routePrefixes, c.routeSuffixes, c.routeFQDNs, _ = LoadDomainsCsv(c.DomainListPath)
 		for range time.NewTicker(c.DomainListRefreshInterval.Duration).C {
-			c.routePrefixes, c.routeSuffixes, c.routeFQDNs = LoadDomainsCsv(c.DomainListPath)
+			c.routePrefixes, c.routeSuffixes, c.routeFQDNs, _ = LoadDomainsCsv(c.DomainListPath)
 		}
 	} else {
 		select {}
 	}
+}
+
+func toLowerSlice(in []string) (out []string) {
+	for _, v := range in {
+		out = append(out, strings.ToLower(v))
+	}
+	return
 }

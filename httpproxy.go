@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	slog "golang.org/x/exp/slog"
 )
 
-var verbose = false
+var httplog = slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue("http")}}))
 
 var passthruRequestHeaderKeys = [...]string{
 	"Accept",
@@ -54,15 +54,21 @@ func runHTTP() {
 }
 
 func handle80(w http.ResponseWriter, r *http.Request) {
+	if !checkGeoIPSkip(r.RemoteAddr) {
+		http.Error(w, "Could not reach origin server", 403)
+		return
+	} else {
+		httplog.Info("rejected request", "ip", r.RemoteAddr)
+	}
 
 	// NOTE: if the URL starts with the public IP, it needs to be skipped to avoid loops
 	if strings.HasPrefix(r.Host, c.PublicIP) {
-		log.Warnf("[HTTP] someone is requesting HTTP to sniproxy itself, ignoring...")
+		httplog.Warn("someone is requesting HTTP to sniproxy itself, ignoring...")
 		http.Error(w, "Could not reach origin server", 404)
 		return
 	}
 
-	log.Infof("[HTTP] REQ: %v %v%v\n", r.Method, r.Host, r.URL)
+	httplog.Info("REQ", "method", r.Method, "host", r.Host, "url", r.URL)
 
 	// Construct filtered header to send to origin server
 	hh := http.Header{}
@@ -89,21 +95,21 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 	// check to see if this host is listed to be processed, otherwise RESET
 	if !c.AllDomains && inDomainList(r.Host+".") {
 		http.Error(w, "Could not reach origin server", 403)
-		log.Warnf("[HTTP] a client requested connection to %s, but it's not allowed as per configuration.. sending 403", r.Host)
+		httplog.Warn("a client requested connection to " + r.Host + ", but it's not allowed as per configuration.. sending 403")
 		return
 	}
 
-	// if host is the reverse proxy, this request needs to be handled by the upstream address
+	// TODO: if host is the reverse proxy, this request needs to be handled by the upstream address
 	if r.Host == c.reverseProxySNI {
 		reverseProxyURI, err := url.Parse(c.reverseProxyAddr)
 		if err != nil {
-			log.Errorf("failed to parse reverseproxy url: %s", err)
+			httplog.Error("failed to parse reverseproxy url", err)
+
 		}
 		// TODO: maybe this won't work and I need to be more specific
 		// rr.URL = reverseProxyURI
 		hostPort := fmt.Sprintf("%s:%s", reverseProxyURI.Host, reverseProxyURI.Port())
 		rr.URL.Host = reverseProxyURI.Host
-		// BUG: port should be handled here
 		// add the port to the host header
 		rr.Header.Set("Host", hostPort)
 	}
@@ -113,16 +119,12 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// TODO: Passthru more error information
 		http.Error(w, "Could not reach origin server", 500)
-		log.Warnf("%s", err)
+		httplog.Error("", err)
 		return
 	}
 	defer resp.Body.Close()
 
-	if verbose {
-		log.Infof("[HTTP] RES: %v %+v\n", resp.Status, resp.Header)
-	} else {
-		log.Infof("[HTTP] RES: %v\n", resp.Status)
-	}
+	httplog.Info("http response", "status_code", resp.Status)
 
 	// Transfer filtered header from origin server -> client
 	respH := w.Header()

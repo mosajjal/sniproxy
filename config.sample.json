@@ -8,5 +8,17 @@
     "bindDnsOverQuic": false,
     "tlsCert": "",
     "tlsKey": "",
-    "allDomains": false
+    "allDomains": false,
+    "dnsPort": 53,
+    "geoipExclude": "",
+    "geoipInclude": "",
+    "geoipPath": "",
+    "geoipRefreshInterval": "",
+    "httpPort": 80,
+    "httpsPort": 443,
+    "interface": "",
+    "publicIP": "",
+    "reverseProxy": "",
+    "reverseProxyCert": "",
+    "reverseProxyKey": ""
 }

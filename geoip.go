@@ -1,7 +1,7 @@
 package main
 
 import (
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -42,7 +42,7 @@ func initializeGeoIP() error {
 		}
 		geolog.Info("(re)fetching URL: ", c.GeoIPPath)
 		defer resp.Body.Close()
-		scanner, err = ioutil.ReadAll(resp.Body)
+		scanner, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}

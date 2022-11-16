@@ -50,7 +50,7 @@ type runConfig struct {
 
 	mmdb *maxminddb.Reader
 
-	dnsClient  dnsclient.Client
+	dnsClient  DNSClient
 	sourceAddr net.IP
 
 	reverseProxySNI  string
@@ -127,7 +127,7 @@ func getPublicIPInner() (string, error) {
 		// backup method of getting a public IP
 		if externalIP == "" {
 			// dig +short myip.opendns.com @208.67.222.222
-			dnsRes, _, err := performExternalAQuery("myip.opendns.com.")
+			dnsRes, _, err := c.dnsClient.performExternalAQuery("myip.opendns.com.")
 			if err != nil {
 				return "", err
 			}
@@ -252,12 +252,12 @@ func main() {
 
 	}
 
-	var err error
-	c.dnsClient, err = dnsclient.New(c.UpstreamDNS, true)
+	tmp, err := dnsclient.New(c.UpstreamDNS, true)
 	if err != nil {
 		log.Error("", err)
 	}
-	defer c.dnsClient.Close()
+	c.dnsClient = DNSClient{C: tmp}
+	defer c.dnsClient.C.Close()
 	go runHTTP()
 	go runHTTPS()
 	go runDNS()

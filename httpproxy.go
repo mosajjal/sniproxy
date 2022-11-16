@@ -57,11 +57,10 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 	if !checkGeoIPSkip(r.RemoteAddr) {
 		http.Error(w, "Could not reach origin server", 403)
 		return
-	} else {
-		httplog.Info("rejected request", "ip", r.RemoteAddr)
 	}
+	httplog.Info("rejected request", "ip", r.RemoteAddr)
 
-	// NOTE: if the URL starts with the public IP, it needs to be skipped to avoid loops
+	// if the URL starts with the public IP, it needs to be skipped to avoid loops
 	if strings.HasPrefix(r.Host, c.PublicIP) {
 		httplog.Warn("someone is requesting HTTP to sniproxy itself, ignoring...")
 		http.Error(w, "Could not reach origin server", 404)
@@ -99,7 +98,7 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: if host is the reverse proxy, this request needs to be handled by the upstream address
+	// if host is the reverse proxy, this request needs to be handled by the upstream address
 	if r.Host == c.reverseProxySNI {
 		reverseProxyURI, err := url.Parse(c.reverseProxyAddr)
 		if err != nil {

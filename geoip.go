@@ -57,25 +57,22 @@ func initializeGeoIP() error {
 		n, err := file.Read(scanner)
 		if err != nil {
 			return err
-		} else {
-			geolog.Info("geolocation database loaded", n)
 		}
+		geolog.Info("geolocation database loaded", n)
 
 	}
 	var err error
 	if c.mmdb, err = maxminddb.FromBytes(scanner); err != nil {
 		//geolog.Warn("%d bytes read, %s", len(scanner), err)
 		return err
-	} else {
-		geolog.Info("Loaded MMDB")
 	}
+	geolog.Info("Loaded MMDB")
 	for range time.NewTicker(c.GeoIPRefreshInterval).C {
 		if c.mmdb, err = maxminddb.FromBytes(scanner); err != nil {
 			//geolog.Warn("%d bytes read, %s", len(scanner), err)
 			return err
-		} else {
-			geolog.Info("Loaded MMDB %v", c.mmdb)
 		}
+		geolog.Info("Loaded MMDB %v", c.mmdb)
 	}
 	return nil
 }

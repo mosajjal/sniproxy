@@ -135,15 +135,17 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.StatusCode)
 
 	// Transfer response from origin server -> client
-	if resp.ContentLength > 0 {
-		// (Ignore I/O errors, since there's nothing we can do)
-		io.CopyN(w, resp.Body, resp.ContentLength)
-	} else if resp.Close { // TODO: Is this condition right?
-		// Copy until EOF or some other error occurs
-		for {
-			if _, err := io.Copy(w, resp.Body); err != nil {
-				break
-			}
-		}
-	}
+	//TODO: error handling
+	io.Copy(w, resp.Body)
+	// if resp.ContentLength > 0 {
+	// 	// (Ignore I/O errors, since there's nothing we can do)
+	// 	io.CopyN(w, resp.Body, resp.ContentLength)
+	// } else if resp.Close { // TODO: Is this condition right?
+	// 	// Copy until EOF or some other error occurs
+	// 	for {
+	// 		if _, err := io.Copy(w, resp.Body); err != nil {
+	// 			break
+	// 		}
+	// 	}
+	// }
 }

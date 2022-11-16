@@ -27,15 +27,15 @@ func GetHostname(data []byte) (string, error) {
 		return "", fmt.Errorf("Doesn't look like a TLS Client Hello")
 	}
 
-	extensions, err := GetExtensionBlock(data)
+	extensions, err := getExtensionBlock(data)
 	if err != nil {
 		return "", err
 	}
-	sn, err := GetSNBlock(extensions)
+	sn, err := getSNBlock(extensions)
 	if err != nil {
 		return "", err
 	}
-	sni, err := GetSNIBlock(sn)
+	sni, err := getSNIBlock(sn)
 	if err != nil {
 		return "", err
 	}
@@ -50,9 +50,9 @@ func lengthFromData(data []byte, index int) int {
 	return (b1 << 8) + b2
 }
 
-// GetSNIBlock :Given a Server Name TLS Extension block, parse out and return the SNI
+// getSNIBlock :Given a Server Name TLS Extension block, parse out and return the SNI
 // (Server Name Indication) payload
-func GetSNIBlock(data []byte) ([]byte, error) {
+func getSNIBlock(data []byte) ([]byte, error) {
 	index := 0
 
 	for {
@@ -73,8 +73,8 @@ func GetSNIBlock(data []byte) ([]byte, error) {
 	)
 }
 
-// GetSNBlock :Given a TLS Extensions data block, go ahead and find the SN block
-func GetSNBlock(data []byte) ([]byte, error) {
+// getSNBlock :Given a TLS Extensions data block, go ahead and find the SN block
+func getSNBlock(data []byte) ([]byte, error) {
 	index := 0
 
 	if len(data) < 2 {
@@ -105,8 +105,8 @@ func GetSNBlock(data []byte) ([]byte, error) {
 	)
 }
 
-// GetExtensionBlock :Given a raw TLS Client Hello, go ahead and find all the Extensions
-func GetExtensionBlock(data []byte) ([]byte, error) {
+// getExtensionBlock :Given a raw TLS Client Hello, go ahead and find all the Extensions
+func getExtensionBlock(data []byte) ([]byte, error) {
 	/*   data[0]           - content type
 	 *   data[1], data[2]  - major/minor version
 	 *   data[3], data[4]  - total length

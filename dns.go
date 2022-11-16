@@ -20,16 +20,20 @@ import (
 	"github.com/miekg/dns"
 )
 
+type DNSClient struct {
+	C dnsclient.Client
+}
+
 var (
 	matchPrefix = uint8(1)
 	matchSuffix = uint8(2)
 	matchFQDN   = uint8(3)
 )
+var dnsLock sync.RWMutex
 
 var dnslog = slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue("dns")}}))
 
 // inDomainList returns true if the domain is meant to be SKIPPED and not go through sni proxy
-// todo: this needs to be replaced by a few tst
 func inDomainList(fqdn string) bool {
 	fqdnLower := strings.ToLower(fqdn)
 	// check for fqdn match
@@ -81,7 +85,6 @@ func LoadDomainsCsv(Filename string) (*tst.TernarySearchTree, *tst.TernarySearch
 		}
 		resp, err := client.Get(Filename)
 		if err != nil {
-			//dnslog.Fatal(err)
 			dnslog.Error("", err)
 			return prefix, suffix, all, err
 		}
@@ -104,7 +107,6 @@ func LoadDomainsCsv(Filename string) (*tst.TernarySearchTree, *tst.TernarySearch
 		// split the line by comma to understand thednslog.c
 		fqdn := strings.Split(lowerCaseLine, ",")
 		if len(fqdn) != 2 {
-			//dnslog.Warnf("%s is not a valid line, assuming fqdn", lowerCaseLine)
 			dnslog.Info(lowerCaseLine + " is not a valid line, assuming FQDN")
 			fqdn = []string{lowerCaseLine, "fqdn"}
 		}
@@ -130,9 +132,7 @@ func LoadDomainsCsv(Filename string) (*tst.TernarySearchTree, *tst.TernarySearch
 	return prefix, suffix, all, nil
 }
 
-var dnsLock sync.RWMutex
-
-func performExternalAQuery(fqdn string) ([]dns.RR, time.Duration, error) {
+func (dnsc *DNSClient) performExternalAQuery(fqdn string) ([]dns.RR, time.Duration, error) {
 	if !strings.HasSuffix(fqdn, ".") {
 		fqdn = fqdn + "."
 	}
@@ -142,12 +142,16 @@ func performExternalAQuery(fqdn string) ([]dns.RR, time.Duration, error) {
 	msg.SetQuestion(fqdn, dns.TypeA)
 	msg.SetEdns0(1232, true)
 	dnsLock.Lock()
-	res, trr, err := c.dnsClient.Query(context.Background(), &msg)
+	if dnsc.C == nil {
+		return nil, 0, fmt.Errorf("DNS client is not initialised")
+	}
+	res, trr, err := dnsc.C.Query(context.Background(), &msg)
 	if err != nil {
 		if err.Error() == "EOF" {
 			dnslog.Info("reconnecting DNS...")
-			c.dnsClient.Close()
-			c.dnsClient, err = dnsclient.New(c.UpstreamDNS, true)
+			// dnsc.C.Close()
+			// dnsc.C, err = dnsclient.New(c.UpstreamDNS, true)
+			err = c.dnsClient.C.Reconnect()
 		}
 	}
 	dnsLock.Unlock()
@@ -168,7 +172,7 @@ func processQuestion(q dns.Question) ([]dns.RR, error) {
 	}
 
 	// Otherwise do an upstream query and use that answer.
-	resp, rtt, err := performExternalAQuery(q.Name)
+	resp, rtt, err := c.dnsClient.performExternalAQuery(q.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -178,17 +182,17 @@ func processQuestion(q dns.Question) ([]dns.RR, error) {
 	return resp, nil
 }
 
-func lookupDomain4(domain string) (net.IP, error) {
+func (dnsc DNSClient) lookupDomain4(domain string) (net.IP, error) {
 	if !strings.HasSuffix(domain, ".") {
 		domain = domain + "."
 	}
-	rAddrDNS, _, err := performExternalAQuery(domain)
+	rAddrDNS, _, err := dnsc.performExternalAQuery(domain)
 	if err != nil {
 		return nil, err
 	}
 	if len(rAddrDNS) > 0 {
 		if rAddrDNS[0].Header().Rrtype == dns.TypeCNAME {
-			return lookupDomain4(rAddrDNS[0].(*dns.CNAME).Target)
+			return dnsc.lookupDomain4(rAddrDNS[0].(*dns.CNAME).Target)
 		}
 		if rAddrDNS[0].Header().Rrtype == dns.TypeA {
 			return rAddrDNS[0].(*dns.A).A, nil

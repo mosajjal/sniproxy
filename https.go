@@ -55,7 +55,7 @@ func handle443(conn net.Conn) error {
 		conn.Close()
 		return nil
 	}
-	rAddr, err := lookupDomain4(sni)
+	rAddr, err := c.dnsClient.lookupDomain4(sni)
 	rPort := 443
 	if err != nil || rAddr == nil {
 		httpslog.Warn(err.Error())
@@ -66,13 +66,14 @@ func handle443(conn net.Conn) error {
 		httpslog.Info("connection to private IP ignored")
 		return nil
 	}
-	// TODO: if SNI is the reverse proxy, this request needs to be handled by a HTTPS handler
+	// if SNI is the reverse proxy, this request needs to be handled by a HTTPS handler
 	if sni == c.reverseProxySNI {
 		rAddr = net.IPv4(127, 0, 0, 1)
+		// TODO: maybe 65000 as a static port is not a good idea and this needs to be random OR unix socket
 		rPort = 65000
 	}
 	httpslog.Info("establishing connection", "remote_ip", rAddr, "host", sni)
-	// TODO: with the manipulation of the soruce address, we can set the outbound interface
+	// with the manipulation of the soruce address, we can set the outbound interface
 	srcAddr := net.TCPAddr{
 		IP:   c.sourceAddr,
 		Port: 0,
@@ -133,8 +134,6 @@ func runHTTPS() {
 		}
 		go func() {
 			go handle443(c)
-			//TODO: there's a better way to handle TCP timeouts than just a blanket 30 seconds rule
-			// c.Close()
 		}()
 	}
 }

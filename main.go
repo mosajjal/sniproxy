@@ -189,7 +189,7 @@ func main() {
 
 	flag.StringVar(&c.Interface, "interface", "", "Interface used for outbound TLS connections. uses OS prefered one if empty")
 
-	flag.StringVar(&c.Prometheus, "prometheus", "", "Enable prometheus endpoint on IP:PORT. example: 127.0.0.1:8080")
+	flag.StringVar(&c.Prometheus, "prometheus", "", "Enable prometheus endpoint on IP:PORT. example: 127.0.0.1:8080. Always exposes /metrics and only supports HTTP")
 
 	config := flag.StringP("config", "c", "", "path to JSON configuration file")
 

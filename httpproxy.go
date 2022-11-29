@@ -50,10 +50,14 @@ func runHTTP() {
 		MaxHeaderBytes: 1 << 20,
 	}
 
-	s.ListenAndServe()
+	if err := s.ListenAndServe(); err != nil {
+		httplog.Error("", err)
+		panic(-1)
+	}
 }
 
 func handle80(w http.ResponseWriter, r *http.Request) {
+	c.recievedHTTP.Inc(1)
 	if !checkGeoIPSkip(r.RemoteAddr) {
 		http.Error(w, "Could not reach origin server", 403)
 		return
@@ -107,7 +111,12 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 		}
 		// TODO: maybe this won't work and I need to be more specific
 		// rr.URL = reverseProxyURI
-		hostPort := fmt.Sprintf("%s:%s", reverseProxyURI.Host, reverseProxyURI.Port())
+		hostPort := ""
+		if reverseProxyURI.Port() != "80" {
+			hostPort = fmt.Sprintf("%s:%s", reverseProxyURI.Host, reverseProxyURI.Port())
+		} else {
+			hostPort = reverseProxyURI.Host
+		}
 		rr.URL.Host = reverseProxyURI.Host
 		// add the port to the host header
 		rr.Header.Set("Host", hostPort)
@@ -132,6 +141,7 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 			respH[hk] = hv
 		}
 	}
+	c.proxiedHTTP.Inc(1)
 	w.WriteHeader(resp.StatusCode)
 
 	// Transfer response from origin server -> client

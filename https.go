@@ -30,7 +30,7 @@ func handleReverse(conn net.Conn) error {
 }
 
 func handle443(conn net.Conn) error {
-
+	c.recievedHTTPS.Inc(1)
 	if !checkGeoIPSkip(conn.RemoteAddr().String()) {
 		httpslog.Warn("Rejected request due to GEOIP restriction", "ip", conn.RemoteAddr().String())
 		conn.Close()
@@ -85,6 +85,7 @@ func handle443(conn net.Conn) error {
 		return err
 	}
 	defer target.Close()
+	c.proxiedHTTPS.Inc(1)
 	target.Write(incoming[:n])
 	pipe(conn, target)
 	return nil
@@ -125,6 +126,7 @@ func runHTTPS() {
 	l, err := net.Listen("tcp", c.BindIP+fmt.Sprintf(":%d", c.HTTPSPort))
 	if err != nil {
 		httpslog.Error("", err)
+		panic(-1)
 	}
 	defer l.Close()
 	for {

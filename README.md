@@ -25,6 +25,7 @@ Usage of sniproxy:
       --httpPort uint                        HTTP Port to listen on. Should remain 80 in most cases (default 80)
       --httpsPort uint                       HTTPS Port to listen on. Should remain 443 in most cases (default 443)
       --interface string                     Interface used for outbound TLS connections. uses OS prefered one if empty
+      --prometheus string                    Enable prometheus endpoint on IP:PORT. example: 127.0.0.1:8080. Always exposes /metrics and only supports HTTP
       --publicIP string                      Public IP of the server, reply address of DNS queries (default "")
       --reverseProxy string                  SNI and upstream URL. example: www.example.com::http://127.0.0.1:4001
       --reverseProxyCert string              Path to the certificate for reverse proxy. eg: /tmp/mycert.pem

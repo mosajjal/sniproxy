@@ -50,7 +50,7 @@ if command -v ss &> /dev/null; then
     fi
 elif command -v netstat &> /dev/null; then
     if netstat -lun | grep -q 53; then
-        echo "stub resolver is not removed"
+        echo "stub resolver is not removed. maybe sniproxy is already installed?"
         exit 1
     fi
 else

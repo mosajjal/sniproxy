@@ -41,12 +41,21 @@ fi
 sed -i 's/#DNS=/DNS=9.9.9.9/; s/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf 
 systemctl restart systemd-resolved
 
-# check if stub resolver is removed by checking netstat for port 53 udp 
-if netstat -lntu | grep -q 53; then
-    echo "Failed to remove stub resolver"
-    exit 1
+# check if stub resolver is removed by checking netstat for port 53 udp. try both ss and netstat
+# try ss first, if it's not installed, try netstat
+if command -v ss &> /dev/null; then
+    if ss -lun | grep -q 53; then
+        echo "stub resolver is not removed"
+        exit 1
+    fi
+elif command -v netstat &> /dev/null; then
+    if netstat -lun | grep -q 53; then
+        echo "stub resolver is not removed"
+        exit 1
+    fi
 else
-    echo "Stub resolver removed"
+    echo "ss and netstat could not be found"
+    exit 1
 fi
 
 # create a folder under /opt for sniproxy

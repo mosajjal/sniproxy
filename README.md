@@ -79,5 +79,5 @@ Once your server has been created, log in to the server using SSH or console. Th
 
 once you have a shell in front of you, run the following (assuming you're on Ubuntu 22.04)
 ```bash
-curl -L https://raw.githubusercontent.com/mosajjal/sniproxy/master/install.sh | bash -
+bash <(curl -L https://raw.githubusercontent.com/mosajjal/sniproxy/master/install.sh)
 ```

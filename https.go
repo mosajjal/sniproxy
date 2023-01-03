@@ -72,7 +72,11 @@ func handle443(conn net.Conn) error {
 		// TODO: maybe 65000 as a static port is not a good idea and this needs to be random OR unix socket
 		rPort = 65000
 	}
-	httpslog.Info("establishing connection", "remote_ip", rAddr, "host", sni)
+	httpslog.Info("establishing connection",
+		"remote_ip", rAddr,
+		"source_ip", conn.RemoteAddr().String(),
+		"host", sni,
+	)
 	// with the manipulation of the soruce address, we can set the outbound interface
 	srcAddr := net.TCPAddr{
 		IP:   c.sourceAddr,

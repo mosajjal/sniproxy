@@ -8,6 +8,7 @@ import (
 	"net"
 
 	slog "golang.org/x/exp/slog"
+	"golang.org/x/net/proxy"
 )
 
 var httpslog = slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue("https")}}))
@@ -77,16 +78,27 @@ func handle443(conn net.Conn) error {
 		"source_ip", conn.RemoteAddr().String(),
 		"host", sni,
 	)
-	// with the manipulation of the soruce address, we can set the outbound interface
-	srcAddr := net.TCPAddr{
-		IP:   c.sourceAddr,
-		Port: 0,
-	}
-	target, err := net.DialTCP("tcp", &srcAddr, &net.TCPAddr{IP: rAddr, Port: rPort})
-	if err != nil {
-		httpslog.Error("could not connect to target", err)
-		conn.Close()
-		return err
+	var target *net.TCPConn
+	if c.dialer == proxy.Direct {
+		// with the manipulation of the soruce address, we can set the outbound interface
+		srcAddr := net.TCPAddr{
+			IP:   c.sourceAddr,
+			Port: 0,
+		}
+		target, err = net.DialTCP("tcp", &srcAddr, &net.TCPAddr{IP: rAddr, Port: rPort})
+		if err != nil {
+			httpslog.Error("could not connect to target", err)
+			conn.Close()
+			return err
+		}
+	} else {
+		tmp, err := c.dialer.Dial("tcp", fmt.Sprintf("%s:%d", rAddr, rPort))
+		if err != nil {
+			httpslog.Error("could not connect to target", err)
+			conn.Close()
+			return err
+		}
+		target = tmp.(*net.TCPConn)
 	}
 	defer target.Close()
 	c.proxiedHTTPS.Inc(1)

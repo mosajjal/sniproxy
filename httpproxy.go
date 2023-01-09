@@ -122,8 +122,12 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 		rr.Header.Set("Host", hostPort)
 	}
 
+	transport := http.Transport{
+		Dial: c.dialer.Dial,
+	}
+
 	// Forward request to origin server
-	resp, err := http.DefaultTransport.RoundTrip(&rr)
+	resp, err := transport.RoundTrip(&rr)
 	if err != nil {
 		// TODO: Passthru more error information
 		http.Error(w, "Could not reach origin server", 500)

@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,12 +24,14 @@ import (
 
 	"github.com/miekg/dns"
 	slog "golang.org/x/exp/slog"
+	"golang.org/x/net/proxy"
 )
 
 type runConfig struct {
 	BindIP                    string   `json:"bindIP"`
 	PublicIP                  string   `json:"publicIP"`
 	UpstreamDNS               string   `json:"upstreamDNS"`
+	UpstreamSOCKS5            string   `json:"upstreamSOCKS5"`
 	DomainListPath            string   `json:"domainListPath"`
 	DomainListRefreshInterval duration `json:"domainListRefreshInterval"`
 	BindDNSOverTCP            bool     `json:"bindDnsOverTcp"`
@@ -57,6 +61,7 @@ type runConfig struct {
 	mmdb *maxminddb.Reader
 
 	dnsClient  DNSClient
+	dialer     proxy.Dialer
 	sourceAddr net.IP
 
 	reverseProxySNI  string
@@ -162,6 +167,7 @@ func getPublicIPInner() (string, error) {
 func main() {
 	flag.StringVar(&c.BindIP, "bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
 	flag.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://8.8.8.8:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query")
+	flag.StringVar(&c.UpstreamSOCKS5, "upstreamSOCKS5", "socks5://admin:admin@127.0.0.1:1080", "Use a SOCKS proxy for upstream HTTP/HTTPS traffic.")
 	flag.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.csv")
 	flag.DurationVar(&c.DomainListRefreshInterval.Duration, "domainListRefreshInterval", 60*time.Minute, "Interval to re-fetch the domain list")
 	flag.BoolVar(&c.AllDomains, "allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
@@ -289,6 +295,29 @@ func main() {
 		}
 		c.sourceAddr = net.ParseIP(addrs[0].String())
 
+	}
+
+	if c.UpstreamSOCKS5 != "" {
+		uri, err := url.Parse(c.UpstreamSOCKS5)
+		if err != nil {
+			log.Error("", err)
+		}
+		if uri.Scheme != "socks5" {
+			log.Error("only SOCKS5 is supported", nil)
+			return
+		}
+
+		log.Info("Using an upstream SOCKS5 proxy", "address", uri.Host)
+		u := uri.User.Username()
+		p, _ := uri.User.Password()
+		socksAuth := proxy.Auth{User: u, Password: p}
+		c.dialer, err = proxy.SOCKS5("tcp", uri.Host, &socksAuth, proxy.Direct)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "can't connect to the proxy:", err)
+			os.Exit(1)
+		}
+	} else {
+		c.dialer = proxy.Direct
 	}
 
 	tmp, err := dnsclient.New(c.UpstreamDNS, true)

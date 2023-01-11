@@ -26,13 +26,14 @@ Usage of sniproxy:
       --httpsPort uint                       HTTPS Port to listen on. Should remain 443 in most cases (default 443)
       --interface string                     Interface used for outbound TLS connections. uses OS prefered one if empty
       --prometheus string                    Enable prometheus endpoint on IP:PORT. example: 127.0.0.1:8080. Always exposes /metrics and only supports HTTP
-      --publicIP string                      Public IP of the server, reply address of DNS queries (default "")
+      --publicIP string                      Public IP of the server, reply address of DNS queries (default "YOUR_PUBLIC_IP")
       --reverseProxy string                  SNI and upstream URL. example: www.example.com::http://127.0.0.1:4001
       --reverseProxyCert string              Path to the certificate for reverse proxy. eg: /tmp/mycert.pem
       --reverseProxyKey string               Path to the certificate key for reverse proxy. eg: /tmp/mycert.key
       --tlsCert string                       Path to the certificate for DoH, DoT and DoQ. eg: /tmp/mycert.pem
       --tlsKey string                        Path to the certificate key for DoH, DoT and DoQ. eg: /tmp/mycert.key
       --upstreamDNS string                   Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query (default "udp://8.8.8.8:53")
+      --upstreamSOCKS5 string                Use a SOCKS proxy for upstream HTTP/HTTPS traffic. (default "socks5://admin:admin@127.0.0.1:1080")
 ```      
 
 Docker/Podman

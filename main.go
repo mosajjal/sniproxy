@@ -167,7 +167,7 @@ func getPublicIPInner() (string, error) {
 func main() {
 	flag.StringVar(&c.BindIP, "bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
 	flag.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://8.8.8.8:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query")
-	flag.StringVar(&c.UpstreamSOCKS5, "upstreamSOCKS5", "socks5://admin:admin@127.0.0.1:1080", "Use a SOCKS proxy for upstream HTTP/HTTPS traffic.")
+	flag.StringVar(&c.UpstreamSOCKS5, "upstreamSOCKS5", "", "Use a SOCKS proxy for upstream HTTP/HTTPS traffic. Example: socks5://admin:admin@127.0.0.1:1080")
 	flag.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.csv")
 	flag.DurationVar(&c.DomainListRefreshInterval.Duration, "domainListRefreshInterval", 60*time.Minute, "Interval to re-fetch the domain list")
 	flag.BoolVar(&c.AllDomains, "allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")

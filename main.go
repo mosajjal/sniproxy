@@ -21,7 +21,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/miekg/dns"
 	slog "golang.org/x/exp/slog"
@@ -208,7 +207,6 @@ func main() {
 	flags.StringVar(&c.Prometheus, "prometheus", "", "Enable prometheus endpoint on IP:PORT. example: 127.0.0.1:8080. Always exposes /metrics and only supports HTTP")
 
 	config := flags.StringP("config", "c", "", "path to JSON configuration file")
-	fmt.Println(viper.AllSettings())
 	if err := cmd.Execute(); err != nil {
 		log.Error("failed to execute command", err)
 		return

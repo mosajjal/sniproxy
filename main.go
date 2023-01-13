@@ -20,7 +20,8 @@ import (
 	"github.com/rcrowley/go-metrics"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/miekg/dns"
 	slog "golang.org/x/exp/slog"
@@ -165,41 +166,57 @@ func getPublicIPInner() (string, error) {
 }
 
 func main() {
-	flag.StringVar(&c.BindIP, "bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
-	flag.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://8.8.8.8:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query")
-	flag.StringVar(&c.UpstreamSOCKS5, "upstreamSOCKS5", "", "Use a SOCKS proxy for upstream HTTP/HTTPS traffic. Example: socks5://admin:admin@127.0.0.1:1080")
-	flag.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.csv")
-	flag.DurationVar(&c.DomainListRefreshInterval.Duration, "domainListRefreshInterval", 60*time.Minute, "Interval to re-fetch the domain list")
-	flag.BoolVar(&c.AllDomains, "allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
-	flag.StringVar(&c.PublicIP, "publicIP", getPublicIP(), "Public IP of the server, reply address of DNS queries")
-	flag.BoolVar(&c.BindDNSOverTCP, "bindDnsOverTcp", false, "enable DNS over TCP as well as UDP")
-	flag.BoolVar(&c.BindDNSOverTLS, "bindDnsOverTls", false, "enable DNS over TLS as well as UDP")
-	flag.BoolVar(&c.BindDNSOverQuic, "bindDnsOverQuic", false, "enable DNS over QUIC as well as UDP")
-	flag.StringVar(&c.TLSCert, "tlsCert", "", "Path to the certificate for DoH, DoT and DoQ. eg: /tmp/mycert.pem")
-	flag.StringVar(&c.TLSKey, "tlsKey", "", "Path to the certificate key for DoH, DoT and DoQ. eg: /tmp/mycert.key")
+
+	cmd := &cobra.Command{
+		Use:   "sniproxy",
+		Short: "SNI Proxy with Embedded DNS Server",
+		Run: func(command *cobra.Command, args []string) {
+
+		},
+	}
+	flags := cmd.Flags()
+	flags.StringVar(&c.BindIP, "bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
+	flags.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://8.8.8.8:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query")
+	flags.StringVar(&c.UpstreamSOCKS5, "upstreamSOCKS5", "", "Use a SOCKS proxy for upstream HTTP/HTTPS traffic. Example: socks5://admin:admin@127.0.0.1:1080")
+	flags.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.csv")
+	flags.DurationVar(&c.DomainListRefreshInterval.Duration, "domainListRefreshInterval", 60*time.Minute, "Interval to re-fetch the domain list")
+	flags.BoolVar(&c.AllDomains, "allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
+	flags.StringVar(&c.PublicIP, "publicIP", getPublicIP(), "Public IP of the server, reply address of DNS queries")
+	flags.BoolVar(&c.BindDNSOverTCP, "bindDnsOverTcp", false, "enable DNS over TCP as well as UDP")
+	flags.BoolVar(&c.BindDNSOverTLS, "bindDnsOverTls", false, "enable DNS over TLS as well as UDP")
+	flags.BoolVar(&c.BindDNSOverQuic, "bindDnsOverQuic", false, "enable DNS over QUIC as well as UDP")
+	flags.StringVar(&c.TLSCert, "tlsCert", "", "Path to the certificate for DoH, DoT and DoQ. eg: /tmp/mycert.pem")
+	flags.StringVar(&c.TLSKey, "tlsKey", "", "Path to the certificate key for DoH, DoT and DoQ. eg: /tmp/mycert.key")
 
 	// set an domain to be redirected to a real webserver. essentially adding a simple reverse proxy to sniproxy
-	flag.StringVar(&c.ReverseProxy, "reverseProxy", "", "SNI and upstream URL. example: www.example.com::http://127.0.0.1:4001")
-	flag.StringVar(&c.ReverseProxyCert, "reverseProxyCert", "", "Path to the certificate for reverse proxy. eg: /tmp/mycert.pem")
-	flag.StringVar(&c.ReverseProxyKey, "reverseProxyKey", "", "Path to the certificate key for reverse proxy. eg: /tmp/mycert.key")
+	flags.StringVar(&c.ReverseProxy, "reverseProxy", "", "SNI and upstream URL. example: www.example.com::http://127.0.0.1:4001")
+	flags.StringVar(&c.ReverseProxyCert, "reverseProxyCert", "", "Path to the certificate for reverse proxy. eg: /tmp/mycert.pem")
+	flags.StringVar(&c.ReverseProxyKey, "reverseProxyKey", "", "Path to the certificate key for reverse proxy. eg: /tmp/mycert.key")
 
 	// geoip helper to limit client countries
-	flag.StringVar(&c.GeoIPPath, "geoipPath", "", "path to MMDB URL/path\nExample: https://raw.githubusercontent.com/Loyalsoldier/geoip/release/Country.mmdb")
-	flag.DurationVar(&c.GeoIPRefreshInterval, "geoipRefreshInterval", time.Hour, "MMDB refresh interval")
-	flag.StringSliceVar(&c.GeoIPExclude, "geoipExclude", []string{""}, "Exclude countries to be allowed to connect. example: US,CA")
-	flag.StringSliceVar(&c.GeoIPInclude, "geoipInclude", []string{""}, "Include countries to be allowed to connect. example: US,CA")
+	flags.StringVar(&c.GeoIPPath, "geoipPath", "", "path to MMDB URL/path\nExample: https://raw.githubusercontent.com/Loyalsoldier/geoip/release/Country.mmdb")
+	flags.DurationVar(&c.GeoIPRefreshInterval, "geoipRefreshInterval", time.Hour, "MMDB refresh interval")
+	flags.StringSliceVar(&c.GeoIPExclude, "geoipExclude", []string{""}, "Exclude countries to be allowed to connect. example: US,CA")
+	flags.StringSliceVar(&c.GeoIPInclude, "geoipInclude", []string{""}, "Include countries to be allowed to connect. example: US,CA")
 
-	flag.UintVar(&c.HTTPPort, "httpPort", 80, "HTTP Port to listen on. Should remain 80 in most cases")
-	flag.UintVar(&c.HTTPSPort, "httpsPort", 443, "HTTPS Port to listen on. Should remain 443 in most cases")
-	flag.UintVar(&c.DNSPort, "dnsPort", 53, "HTTP Port to listen on. Should remain 53 in most cases")
+	flags.UintVar(&c.HTTPPort, "httpPort", 80, "HTTP Port to listen on. Should remain 80 in most cases")
+	flags.UintVar(&c.HTTPSPort, "httpsPort", 443, "HTTPS Port to listen on. Should remain 443 in most cases")
+	flags.UintVar(&c.DNSPort, "dnsPort", 53, "HTTP Port to listen on. Should remain 53 in most cases")
 
-	flag.StringVar(&c.Interface, "interface", "", "Interface used for outbound TLS connections. uses OS prefered one if empty")
+	flags.StringVar(&c.Interface, "interface", "", "Interface used for outbound TLS connections. uses OS prefered one if empty")
 
-	flag.StringVar(&c.Prometheus, "prometheus", "", "Enable prometheus endpoint on IP:PORT. example: 127.0.0.1:8080. Always exposes /metrics and only supports HTTP")
+	flags.StringVar(&c.Prometheus, "prometheus", "", "Enable prometheus endpoint on IP:PORT. example: 127.0.0.1:8080. Always exposes /metrics and only supports HTTP")
 
-	config := flag.StringP("config", "c", "", "path to JSON configuration file")
+	config := flags.StringP("config", "c", "", "path to JSON configuration file")
+	fmt.Println(viper.AllSettings())
+	if err := cmd.Execute(); err != nil {
+		log.Error("failed to execute command", err)
+		return
+	}
+	if flags.Changed("help") {
+		return
+	}
 
-	flag.Parse()
 	if *config != "" {
 		configFile, err := os.Open(*config)
 		if err != nil {

@@ -177,7 +177,7 @@ func main() {
 	flags.StringVar(&c.BindIP, "bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
 	flags.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://8.8.8.8:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query")
 	flags.StringVar(&c.UpstreamSOCKS5, "upstreamSOCKS5", "", "Use a SOCKS proxy for upstream HTTP/HTTPS traffic. Example: socks5://admin:admin@127.0.0.1:1080")
-	flags.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.csv")
+	flags.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.csv. Look at the example file for the format. ")
 	flags.DurationVar(&c.DomainListRefreshInterval.Duration, "domainListRefreshInterval", 60*time.Minute, "Interval to re-fetch the domain list")
 	flags.BoolVar(&c.AllDomains, "allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
 	flags.StringVar(&c.PublicIP, "publicIP", getPublicIP(), "Public IP of the server, reply address of DNS queries")
@@ -188,7 +188,7 @@ func main() {
 	flags.StringVar(&c.TLSKey, "tlsKey", "", "Path to the certificate key for DoH, DoT and DoQ. eg: /tmp/mycert.key")
 
 	// set an domain to be redirected to a real webserver. essentially adding a simple reverse proxy to sniproxy
-	flags.StringVar(&c.ReverseProxy, "reverseProxy", "", "SNI and upstream URL. example: www.example.com::http://127.0.0.1:4001")
+	flags.StringVar(&c.ReverseProxy, "reverseProxy", "", "enable reverse proxy for a specific FQDN and upstream URL. example: www.example.com::http://127.0.0.1:4001")
 	flags.StringVar(&c.ReverseProxyCert, "reverseProxyCert", "", "Path to the certificate for reverse proxy. eg: /tmp/mycert.pem")
 	flags.StringVar(&c.ReverseProxyKey, "reverseProxyKey", "", "Path to the certificate key for reverse proxy. eg: /tmp/mycert.key")
 
@@ -200,7 +200,7 @@ func main() {
 
 	flags.UintVar(&c.HTTPPort, "httpPort", 80, "HTTP Port to listen on. Should remain 80 in most cases")
 	flags.UintVar(&c.HTTPSPort, "httpsPort", 443, "HTTPS Port to listen on. Should remain 443 in most cases")
-	flags.UintVar(&c.DNSPort, "dnsPort", 53, "HTTP Port to listen on. Should remain 53 in most cases")
+	flags.UintVar(&c.DNSPort, "dnsPort", 53, "DNS Port to listen on. Should remain 53 in most cases")
 
 	flags.StringVar(&c.Interface, "interface", "", "Interface used for outbound TLS connections. uses OS prefered one if empty")
 

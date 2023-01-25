@@ -200,7 +200,7 @@ func (dnsc DNSClient) lookupDomain4(domain string) (net.IP, error) {
 			return rAddrDNS[0].(*dns.A).A, nil
 		}
 	} else {
-		return nil, fmt.Errorf("[DNS] Empty DNS response for %s with error %s", domain, err)
+		return nil, fmt.Errorf("[DNS] Empty DNS response for %s", domain)
 	}
 	return nil, fmt.Errorf("[DNS] Unknown type %s", dns.TypeToString[rAddrDNS[0].Header().Rrtype])
 }

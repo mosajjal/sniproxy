@@ -245,7 +245,6 @@ func main() {
 	if c.Prometheus != "" {
 		p := prometheusmetrics.NewPrometheusProvider(metrics.DefaultRegistry, "sniproxy", c.PublicIP, prometheus.DefaultRegisterer, 1*time.Second)
 		go p.UpdatePrometheusMetrics()
-		// TODO: path is not configurable
 		go func() {
 			http.Handle("/metrics", promhttp.Handler())
 			log.Info("starting metrics server",

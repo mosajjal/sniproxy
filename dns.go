@@ -88,7 +88,7 @@ func LoadDomainsCsv(Filename string) (*tst.TernarySearchTree, *tst.TernarySearch
 			dnslog.Error("", err)
 			return prefix, suffix, all, err
 		}
-		dnslog.Info("(re)fetching URL: ", Filename)
+		dnslog.Info("(re)fetching URL", "url", Filename)
 		defer resp.Body.Close()
 		scanner = bufio.NewScanner(resp.Body)
 
@@ -97,7 +97,7 @@ func LoadDomainsCsv(Filename string) (*tst.TernarySearchTree, *tst.TernarySearch
 		if err != nil {
 			return prefix, suffix, all, err
 		}
-		dnslog.Info("(re)loading File: ", Filename)
+		dnslog.Info("(re)loading File", "file", Filename)
 		defer file.Close()
 		scanner = bufio.NewScanner(file)
 	}

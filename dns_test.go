@@ -29,7 +29,7 @@ func Test_reverse(t *testing.T) {
 }
 
 func TestDNSClient_lookupDomain4(t *testing.T) {
-	tmp, err := dnsclient.New("udp://1.1.1.1:53", true)
+	tmp, err := dnsclient.New("udp://1.1.1.1:53", true, "")
 	if err != nil {
 		t.Errorf("failed to set up DNS client")
 	}

@@ -334,7 +334,7 @@ func main() {
 		c.dialer = proxy.Direct
 	}
 
-	tmp, err := dnsclient.New(c.UpstreamDNS, true)
+	tmp, err := dnsclient.New(c.UpstreamDNS, true, c.UpstreamSOCKS5)
 	if err != nil {
 		log.Error("", err)
 	}

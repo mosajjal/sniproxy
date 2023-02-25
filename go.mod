@@ -13,7 +13,7 @@ require (
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
 	github.com/spf13/cobra v1.6.1
 	golang.org/x/exp v0.0.0-20230203172020-98cc5a0785f9
-	golang.org/x/net v0.5.0
+	golang.org/x/net v0.7.0
 )
 
 require (
@@ -38,7 +38,7 @@ require (
 	github.com/stretchr/testify v1.8.1 // indirect
 	golang.org/x/crypto v0.5.0 // indirect
 	golang.org/x/mod v0.7.0 // indirect
-	golang.org/x/sys v0.4.0 // indirect
+	golang.org/x/sys v0.5.0 // indirect
 	golang.org/x/tools v0.5.0 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 )

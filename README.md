@@ -84,7 +84,13 @@ After you have selected the appropriate options, click the "Deploy Now" button t
 ## Step 2: Install the SNI Proxy
 Once your server has been created, log in to the server using SSH or console. The root password is available under the "Overview" tab in instances list.
 
-Ensure the firewall is disabled or ports 80, 443 and 53 are open. For example on Vultr's Ubuntu instance run `sudo ufw disable`.
+Ensure the firewall (firewalld, ufw or iptables) is allowing connectivity to ports 80/TCP, 443/TCP and 53/UDP. For `ufw`, allow these ports with:
+```
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 53/udp
+sudo ufw reload
+```
 
 once you have a shell in front of you, run the following (assuming you're on Ubuntu 22.04)
 ```bash

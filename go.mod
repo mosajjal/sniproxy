@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/deathowl/go-metrics-prometheus v0.0.0-20221009205350-f2a1482ba35b
 	github.com/golang-collections/collections v0.0.0-20130729185459-604e922904d3
-	github.com/miekg/dns v1.1.52
+	github.com/miekg/dns v1.1.53
 	github.com/mosajjal/dnsclient v0.1.1-0.20230206011533-99fa18d84393
 	github.com/mosajjal/doqd v0.0.0-20230201205103-19d9a309dc6a
 	github.com/oschwald/maxminddb-golang v1.10.0
@@ -29,8 +29,8 @@ require (
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.42.0 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect
-	github.com/quic-go/qtls-go1-19 v0.3.0 // indirect
-	github.com/quic-go/qtls-go1-20 v0.2.0 // indirect
+	github.com/quic-go/qtls-go1-19 v0.3.2 // indirect
+	github.com/quic-go/qtls-go1-20 v0.2.2 // indirect
 	github.com/quic-go/quic-go v0.33.0 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect

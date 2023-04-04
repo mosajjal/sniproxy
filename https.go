@@ -63,8 +63,8 @@ func handle443(conn net.Conn) error {
 		return err
 	}
 	// TODO: handle timeout and context here
-	if rAddr.IsLoopback() || rAddr.IsPrivate() || rAddr.Equal(net.IPv4(0, 0, 0, 0)) {
-		httpslog.Info("connection to private IP ignored")
+	if rAddr.IsLoopback() || rAddr.IsPrivate() || rAddr.Equal(net.IPv4(0, 0, 0, 0)) || rAddr.Equal(net.IP(c.PublicIP)) {
+		httpslog.Info("connection to private IP or self ignored")
 		return nil
 	}
 	// if SNI is the reverse proxy, this request needs to be handled by a HTTPS handler

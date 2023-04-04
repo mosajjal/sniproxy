@@ -29,7 +29,8 @@ import (
 
 type runConfig struct {
 	BindIP                    string   `json:"bindIP"`
-	PublicIP                  string   `json:"publicIP"`
+	PublicIPv4                string   `json:"publicIPv4"`
+	PublicIPv6                string   `json:"publicIPv6"`
 	UpstreamDNS               string   `json:"upstreamDNS"`
 	UpstreamSOCKS5            string   `json:"upstreamSOCKS5"`
 	DomainListPath            string   `json:"domainListPath"`
@@ -119,13 +120,16 @@ func getChannel(conn net.Conn) chan []byte {
 	return c
 }
 
-func getPublicIP() string {
-	pub, _ := getPublicIPInner()
+func getPublicIPv4() string {
+	pub, _ := getPublicIPv4Inner()
 	return pub
 }
 
-func getPublicIPInner() (string, error) {
-	conn, _ := net.Dial("udp", "8.8.8.8:53")
+func getPublicIPv4Inner() (string, error) {
+	conn, err := net.Dial("udp", "8.8.8.8:53")
+	if err != nil {
+		return "", err
+	}
 	defer conn.Close()
 	localAddr := conn.LocalAddr().String()
 	idx := strings.LastIndex(localAddr, ":")
@@ -146,7 +150,7 @@ func getPublicIPInner() (string, error) {
 		// backup method of getting a public IP
 		if externalIP == "" {
 			// dig +short myip.opendns.com @208.67.222.222
-			dnsRes, _, err := c.dnsClient.performExternalAQuery("myip.opendns.com.")
+			dnsRes, _, err := c.dnsClient.performExternalAQuery("myip.opendns.com.", dns.TypeA)
 			if err != nil {
 				return "", err
 			}
@@ -157,11 +161,63 @@ func getPublicIPInner() (string, error) {
 
 			return externalIP, nil
 		}
-		log.Error("Could not automatically find the public IP address. Please specify it in the configuration.", nil)
+		log.Error("Could not automatically find the public IPv4 address. Please specify it in the configuration.", nil)
 
 	}
 	return "", nil
+}
 
+func getPublicIPv6() string {
+	pub, _ := getPublicIPv6Inner()
+	return pub
+}
+
+func cleanIPv6(ip string) string {
+	ip = strings.TrimPrefix(ip, "[")
+	ip = strings.TrimSuffix(ip, "]")
+	return ip
+}
+
+func getPublicIPv6Inner() (string, error) {
+	conn, err := net.Dial("udp6", "[2001:4860:4860::8888]:53")
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	localAddr := conn.LocalAddr().String()
+	idx := strings.LastIndex(localAddr, ":")
+	ipaddr := localAddr[0:idx]
+	if !net.ParseIP(ipaddr).IsPrivate() {
+		return cleanIPv6(ipaddr), nil
+	}
+	externalIP := ""
+	// trying to get the public IP from multiple sources to see if they match.
+	resp, err := http.Get("https://6.ident.me")
+	if err == nil {
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err == nil {
+			externalIP = string(body)
+		}
+
+		// backup method of getting a public IP
+		if externalIP == "" {
+			// dig +short -6 myip.opendns.com aaaa @2620:0:ccc::2
+			dnsRes, _, err := c.dnsClient.performExternalAQuery("myip.opendns.com.", dns.TypeAAAA)
+			if err != nil {
+				return "", err
+			}
+			externalIP = dnsRes[0].(*dns.AAAA).AAAA.String()
+		}
+
+		if externalIP != "" {
+
+			return cleanIPv6(externalIP), nil
+		}
+		log.Error("Could not automatically find the public IPv6 address. Please specify it in the configuration.", nil)
+
+	}
+	return "", nil
 }
 
 func main() {
@@ -180,7 +236,8 @@ func main() {
 	flags.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.csv. Look at the example file for the format. ")
 	flags.DurationVar(&c.DomainListRefreshInterval.Duration, "domainListRefreshInterval", 60*time.Minute, "Interval to re-fetch the domain list")
 	flags.BoolVar(&c.AllDomains, "allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
-	flags.StringVar(&c.PublicIP, "publicIP", getPublicIP(), "Public IP of the server, reply address of DNS queries")
+	flags.StringVar(&c.PublicIPv4, "publicIPv4", getPublicIPv4(), "Public IP of the server, reply address of DNS A queries")
+	flags.StringVar(&c.PublicIPv6, "publicIPv6", getPublicIPv6(), "Public IPv6 of the server, reply address of DNS AAAA queries")
 	flags.BoolVar(&c.BindDNSOverTCP, "bindDnsOverTcp", false, "enable DNS over TCP as well as UDP")
 	flags.BoolVar(&c.BindDNSOverTLS, "bindDnsOverTls", false, "enable DNS over TLS as well as UDP")
 	flags.BoolVar(&c.BindDNSOverQuic, "bindDnsOverQuic", false, "enable DNS over QUIC as well as UDP")
@@ -243,7 +300,7 @@ func main() {
 	c.proxiedHTTPS = metrics.GetOrRegisterCounter("https.requests.proxied", metrics.DefaultRegistry)
 
 	if c.Prometheus != "" {
-		p := prometheusmetrics.NewPrometheusProvider(metrics.DefaultRegistry, "sniproxy", c.PublicIP, prometheus.DefaultRegisterer, 1*time.Second)
+		p := prometheusmetrics.NewPrometheusProvider(metrics.DefaultRegistry, "sniproxy", c.PublicIPv4, prometheus.DefaultRegisterer, 1*time.Second)
 		go p.UpdatePrometheusMetrics()
 		go func() {
 			http.Handle("/metrics", promhttp.Handler())
@@ -260,21 +317,27 @@ func main() {
 		log.Warn("Domain list (--domainListPath) is not specified, routing ALL domains through the SNI proxy")
 		c.AllDomains = true
 	}
-	if c.PublicIP != "" {
-		log.Info("server info", "public_ip", c.PublicIP)
+	if c.PublicIPv4 != "" {
+		log.Info("server info", "public_ip", c.PublicIPv4)
 	} else {
-		log.Error("Could not automatically determine public IP. you should provide it manually using --publicIP", nil)
+		log.Error("Could not automatically determine public IP. you should provide it manually using --publicIP")
+	}
+
+	if c.PublicIPv6 != "" {
+		log.Info("server info", "public_ip", c.PublicIPv6)
+	} else {
+		log.Error("Could not automatically determine public IP. you should provide it manually using --publicIP")
 	}
 
 	// generate self-signed certificate if not provided
 	if c.TLSCert == "" && c.TLSKey == "" {
-		_, _, err := GenerateSelfSignedCertKey(c.PublicIP, nil, nil, os.TempDir())
+		_, _, err := GenerateSelfSignedCertKey(c.PublicIPv4, nil, nil, os.TempDir())
 		log.Info("Certificate was not provided, using a self signed cert")
 		if err != nil {
 			log.Error("Error while generating self-signed cert: ", err)
 		}
-		c.TLSCert = filepath.Join(os.TempDir(), c.PublicIP+".crt")
-		c.TLSKey = filepath.Join(os.TempDir(), c.PublicIP+".key")
+		c.TLSCert = filepath.Join(os.TempDir(), c.PublicIPv4+".crt")
+		c.TLSKey = filepath.Join(os.TempDir(), c.PublicIPv4+".key")
 	}
 
 	// parse reverseproxy and split it into url and sni

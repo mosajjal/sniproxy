@@ -17,7 +17,7 @@
     "httpPort": 80,
     "httpsPort": 443,
     "interface": "",
-    "publicIP": "",
+    "publicIPv4": "",
     "reverseProxy": "",
     "reverseProxyCert": "",
     "reverseProxyKey": ""

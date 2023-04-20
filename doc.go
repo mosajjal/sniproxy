@@ -55,7 +55,8 @@ Flags:
 	    --httpsPort uint                       HTTPS Port to listen on. Should remain 443 in most cases (default 443)
 	    --interface string                     Interface used for outbound TLS connections. uses OS prefered one if empty
 	    --prometheus string                    Enable prometheus endpoint on IP:PORT. example: 127.0.0.1:8080. Always exposes /metrics and only supports HTTP
-	    --publicIP string                      Public IP of the server, reply address of DNS queries (default "YOUR_PUBLIC_IP")
+	    --publicIPv4 string                    Public IP of the server, reply address of DNS A queries (default "YOUR_IPv4")
+	    --publicIPv6 string                    Public IPv6 of the server, reply address of DNS AAAA queries (default "YOUR_IPv6")
 	    --reverseProxy string                  enable reverse proxy for a specific FQDN and upstream URL. example: www.example.com::http://127.0.0.1:4001
 	    --reverseProxyCert string              Path to the certificate for reverse proxy. eg: /tmp/mycert.pem
 	    --reverseProxyKey string               Path to the certificate key for reverse proxy. eg: /tmp/mycert.key

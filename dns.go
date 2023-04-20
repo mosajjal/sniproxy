@@ -132,14 +132,14 @@ func LoadDomainsCsv(Filename string) (*tst.TernarySearchTree, *tst.TernarySearch
 	return prefix, suffix, all, nil
 }
 
-func (dnsc *DNSClient) performExternalAQuery(fqdn string) ([]dns.RR, time.Duration, error) {
+func (dnsc *DNSClient) performExternalAQuery(fqdn string, QType uint16) ([]dns.RR, time.Duration, error) {
 	if !strings.HasSuffix(fqdn, ".") {
 		fqdn = fqdn + "."
 	}
 
 	msg := dns.Msg{}
 	msg.RecursionDesired = true
-	msg.SetQuestion(fqdn, dns.TypeA)
+	msg.SetQuestion(fqdn, QType)
 	msg.SetEdns0(1232, true)
 	dnsLock.Lock()
 	if dnsc.C == nil {
@@ -160,26 +160,29 @@ func (dnsc *DNSClient) performExternalAQuery(fqdn string) ([]dns.RR, time.Durati
 
 func processQuestion(q dns.Question) ([]dns.RR, error) {
 	c.recievedDNS.Inc(1)
+	// Check to see if we should respond with our own IP
 	if c.AllDomains || !inDomainList(q.Name) {
 		// Return the public IP.
 		c.proxiedDNS.Inc(1)
-		rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, c.PublicIP))
-		if err != nil {
-			return nil, err
-		}
-
 		dnslog.Info("returned sniproxy address for domain", "fqdn", q.Name)
 
-		return []dns.RR{rr}, nil
+		if q.Qtype == dns.TypeA {
+			rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, c.PublicIPv4))
+			return []dns.RR{rr}, err
+		}
+		if q.Qtype == dns.TypeAAAA {
+			rr, err := dns.NewRR(fmt.Sprintf("%s AAAA %s", q.Name, c.PublicIPv6))
+			return []dns.RR{rr}, err
+		}
 	}
 
 	// Otherwise do an upstream query and use that answer.
-	resp, rtt, err := c.dnsClient.performExternalAQuery(q.Name)
+	resp, rtt, err := c.dnsClient.performExternalAQuery(q.Name, q.Qtype)
 	if err != nil {
 		return nil, err
 	}
 
-	dnslog.Info("[DNS] returned origin address", "fqdn", q.Name, "rtt", rtt)
+	dnslog.Info("returned origin address", "fqdn", q.Name, "rtt", rtt)
 
 	return resp, nil
 }
@@ -188,7 +191,7 @@ func (dnsc DNSClient) lookupDomain4(domain string) (net.IP, error) {
 	if !strings.HasSuffix(domain, ".") {
 		domain = domain + "."
 	}
-	rAddrDNS, _, err := dnsc.performExternalAQuery(domain)
+	rAddrDNS, _, err := dnsc.performExternalAQuery(domain, dns.TypeA)
 	if err != nil {
 		return nil, err
 	}

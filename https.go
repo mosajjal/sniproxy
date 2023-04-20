@@ -63,7 +63,7 @@ func handle443(conn net.Conn) error {
 		return err
 	}
 	// TODO: handle timeout and context here
-	if rAddr.IsLoopback() || rAddr.IsPrivate() || rAddr.Equal(net.IPv4(0, 0, 0, 0)) || rAddr.Equal(net.IP(c.PublicIP)) {
+	if rAddr.IsLoopback() || rAddr.IsPrivate() || rAddr.Equal(net.IPv4(0, 0, 0, 0)) || rAddr.Equal(net.IP(c.PublicIPv4)) {
 		httpslog.Info("connection to private IP or self ignored")
 		return nil
 	}

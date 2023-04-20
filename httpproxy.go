@@ -65,7 +65,7 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 	httplog.Info("rejected request", "ip", r.RemoteAddr)
 
 	// if the URL starts with the public IP, it needs to be skipped to avoid loops
-	if strings.HasPrefix(r.Host, c.PublicIP) {
+	if strings.HasPrefix(r.Host, c.PublicIPv4) {
 		httplog.Warn("someone is requesting HTTP to sniproxy itself, ignoring...")
 		http.Error(w, "Could not reach origin server", 404)
 		return

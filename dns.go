@@ -170,10 +170,11 @@ func processQuestion(q dns.Question) ([]dns.RR, error) {
 			rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, c.PublicIPv4))
 			return []dns.RR{rr}, err
 		}
-		if q.Qtype == dns.TypeAAAA {
+		if q.Qtype == dns.TypeAAAA && c.PublicIPv6 != "" {
 			rr, err := dns.NewRR(fmt.Sprintf("%s AAAA %s", q.Name, c.PublicIPv6))
 			return []dns.RR{rr}, err
 		}
+		return nil, nil
 	}
 
 	// Otherwise do an upstream query and use that answer.

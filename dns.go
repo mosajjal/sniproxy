@@ -85,7 +85,7 @@ func LoadDomainsCsv(Filename string) (*tst.TernarySearchTree, *tst.TernarySearch
 		}
 		resp, err := client.Get(Filename)
 		if err != nil {
-			dnslog.Error("", err)
+			dnslog.Error(err.Error())
 			return prefix, suffix, all, err
 		}
 		dnslog.Info("(re)fetching URL", "url", Filename)
@@ -170,11 +170,14 @@ func processQuestion(q dns.Question) ([]dns.RR, error) {
 			rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, c.PublicIPv4))
 			return []dns.RR{rr}, err
 		}
-		if q.Qtype == dns.TypeAAAA && c.PublicIPv6 != "" {
-			rr, err := dns.NewRR(fmt.Sprintf("%s AAAA %s", q.Name, c.PublicIPv6))
-			return []dns.RR{rr}, err
+		if q.Qtype == dns.TypeAAAA {
+			if c.PublicIPv6 != "" {
+				rr, err := dns.NewRR(fmt.Sprintf("%s AAAA %s", q.Name, c.PublicIPv6))
+				return []dns.RR{rr}, err
+			}
+			// return an empty response if we don't have an IPv6 address
+			return []dns.RR{}, nil
 		}
-		return nil, nil
 	}
 
 	// Otherwise do an upstream query and use that answer.
@@ -223,7 +226,7 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	for _, q := range m.Question {
 		answers, err := processQuestion(q)
 		if err != nil {
-			dnslog.Error("", err)
+			dnslog.Error(err.Error())
 			continue
 		}
 		m.Answer = append(m.Answer, answers...)
@@ -266,7 +269,7 @@ func runDNS() {
 		go func() {
 			crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
 			if err != nil {
-				dnslog.Error("", err)
+				dnslog.Error(err.Error())
 				panic(2)
 
 			}
@@ -278,7 +281,7 @@ func runDNS() {
 			err = serverTLS.ListenAndServe()
 			defer serverTLS.Shutdown()
 			if err != nil {
-				dnslog.Error("", err)
+				dnslog.Error(err.Error())
 			}
 		}()
 	}
@@ -287,7 +290,7 @@ func runDNS() {
 
 		crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
 		if err != nil {
-			dnslog.Error("", err)
+			dnslog.Error(err.Error())
 		}
 		tlsConfig := &tls.Config{}
 		tlsConfig.Certificates = []tls.Certificate{crt}
@@ -295,7 +298,7 @@ func runDNS() {
 		// Create the QUIC listener
 		doqServer, err := doqserver.New(":8853", crt, "127.0.0.1:53", true)
 		if err != nil {
-			dnslog.Error("", err)
+			dnslog.Error(err.Error())
 		}
 
 		// Accept QUIC connections

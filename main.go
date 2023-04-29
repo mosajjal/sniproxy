@@ -308,7 +308,7 @@ func main() {
 				"address", c.Prometheus,
 			)
 			if err := http.ListenAndServe(c.Prometheus, promhttp.Handler()); err != nil {
-				log.Error("", err)
+				log.Error(err.Error())
 			}
 		}()
 	}
@@ -320,13 +320,13 @@ func main() {
 	if c.PublicIPv4 != "" {
 		log.Info("server info", "public_ip", c.PublicIPv4)
 	} else {
-		log.Error("Could not automatically determine public IP. you should provide it manually using --publicIP")
+		log.Error("Could not automatically determine public IPv4. you should provide it manually using --publicIPv4")
 	}
 
 	if c.PublicIPv6 != "" {
 		log.Info("server info", "public_ip", c.PublicIPv6)
 	} else {
-		log.Error("Could not automatically determine public IP. you should provide it manually using --publicIP")
+		log.Error("Could not automatically determine public IPv6. you should provide it manually using --publicIPv6")
 	}
 
 	// generate self-signed certificate if not provided
@@ -349,6 +349,11 @@ func main() {
 		go runReverse()
 	}
 
+	// throw an error if geoip include or exclude is present, but geoippath is not
+	if c.GeoIPPath == "" && (len(c.GeoIPInclude)+len(c.GeoIPExclude) >= 1) {
+		log.Error("GeoIP include or exclude is present, but GeoIPPath is not")
+	}
+
 	// load mmdb if provided
 	if c.GeoIPPath != "" {
 		go initializeGeoIP()
@@ -363,11 +368,11 @@ func main() {
 		log.Info("Using", "interface", c.Interface)
 		ief, err := net.InterfaceByName(c.Interface)
 		if err != nil {
-			log.Error("", err)
+			log.Error(err.Error())
 		}
 		addrs, err := ief.Addrs()
 		if err != nil {
-			log.Error("", err)
+			log.Error(err.Error())
 
 		}
 		c.sourceAddr = net.ParseIP(addrs[0].String())
@@ -377,7 +382,7 @@ func main() {
 	if c.UpstreamSOCKS5 != "" {
 		uri, err := url.Parse(c.UpstreamSOCKS5)
 		if err != nil {
-			log.Error("", err)
+			log.Error(err.Error())
 		}
 		if uri.Scheme != "socks5" {
 			log.Error("only SOCKS5 is supported", nil)
@@ -399,7 +404,7 @@ func main() {
 
 	tmp, err := dnsclient.New(c.UpstreamDNS, true, c.UpstreamSOCKS5)
 	if err != nil {
-		log.Error("", err)
+		log.Error(err.Error())
 	}
 	c.dnsClient = DNSClient{C: tmp}
 	defer c.dnsClient.C.Close()

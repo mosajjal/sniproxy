@@ -51,7 +51,7 @@ func runHTTP() {
 	}
 
 	if err := s.ListenAndServe(); err != nil {
-		httplog.Error("", err)
+		httplog.Error(err.Error())
 		panic(-1)
 	}
 }
@@ -131,7 +131,7 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// TODO: Passthru more error information
 		http.Error(w, "Could not reach origin server", 500)
-		httplog.Error("", err)
+		httplog.Error(err.Error())
 		return
 	}
 	defer resp.Body.Close()

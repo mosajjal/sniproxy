@@ -40,7 +40,7 @@ func initializeGeoIP() error {
 		if err != nil {
 			return err
 		}
-		geolog.Info("(re)fetching URL: ", c.GeoIPPath)
+		geolog.Info("(re)fetching", "path", c.GeoIPPath)
 		defer resp.Body.Close()
 		scanner, err = io.ReadAll(resp.Body)
 		if err != nil {

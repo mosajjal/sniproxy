@@ -42,12 +42,12 @@ func handle443(conn net.Conn) error {
 	incoming := make([]byte, 2048)
 	n, err := conn.Read(incoming)
 	if err != nil {
-		httpslog.Error("", err)
+		httpslog.Error(err.Error())
 		return err
 	}
 	sni, err := GetHostname(incoming)
 	if err != nil {
-		httpslog.Error("", err)
+		httpslog.Error(err.Error())
 		return err
 	}
 	// check SNI against domainlist for an extra layer of security
@@ -111,18 +111,18 @@ func runReverse() {
 	// reverse https can't run on 443. we'll pick a random port and pipe the 443 traffic back to it.
 	cert, err := tls.LoadX509KeyPair(c.ReverseProxyCert, c.ReverseProxyKey)
 	if err != nil {
-		httpslog.Error("", err)
+		httpslog.Error(err.Error())
 	}
 	config := tls.Config{Certificates: []tls.Certificate{cert}}
 	config.Rand = rand.Reader
 	listener, err := tls.Listen("tcp", ":65000", &config)
 	if err != nil {
-		httpslog.Error("", err)
+		httpslog.Error(err.Error())
 	}
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			httpslog.Error("", err)
+			httpslog.Error(err.Error())
 			break
 		}
 		defer conn.Close()
@@ -141,14 +141,14 @@ func runHTTPS() {
 
 	l, err := net.Listen("tcp", c.BindIP+fmt.Sprintf(":%d", c.HTTPSPort))
 	if err != nil {
-		httpslog.Error("", err)
+		httpslog.Error(err.Error())
 		panic(-1)
 	}
 	defer l.Close()
 	for {
 		c, err := l.Accept()
 		if err != nil {
-			httpslog.Error("", err)
+			httpslog.Error(err.Error())
 		}
 		go func() {
 			go handle443(c)

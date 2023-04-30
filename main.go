@@ -356,7 +356,7 @@ func main() {
 
 	// load mmdb if provided
 	if c.GeoIPPath != "" {
-		go initializeGeoIP()
+		go initializeGeoIP(c.GeoIPPath)
 		c.GeoIPExclude = toLowerSlice(c.GeoIPExclude)
 		log.Info("GeoIP", "exclude", c.GeoIPExclude)
 		c.GeoIPInclude = toLowerSlice(c.GeoIPInclude)

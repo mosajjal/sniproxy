@@ -15,6 +15,7 @@ import (
 
 var geolog = slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue("geoip")}}))
 
+// getCountry returns the country code for the given IP address.
 func getCountry(ipAddr string) (string, error) {
 	ip := net.ParseIP(ipAddr)
 	var record struct {
@@ -30,17 +31,18 @@ func getCountry(ipAddr string) (string, error) {
 	return record.Country.ISOCode, nil
 }
 
-func initializeGeoIP() error {
+// initializeGeoIP loads the geolocation database from the specified path.
+func initializeGeoIP(path string) error {
 
 	geolog.Info("Loading the domain from file/url")
 	var scanner []byte
-	if strings.HasPrefix(c.GeoIPPath, "http://") || strings.HasPrefix(c.GeoIPPath, "https://") {
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		geolog.Info("domain list is a URL, trying to fetch")
-		resp, err := http.Get(c.GeoIPPath)
+		resp, err := http.Get(path)
 		if err != nil {
 			return err
 		}
-		geolog.Info("(re)fetching", "path", c.GeoIPPath)
+		geolog.Info("(re)fetching", "path", path)
 		defer resp.Body.Close()
 		scanner, err = io.ReadAll(resp.Body)
 		if err != nil {
@@ -48,11 +50,11 @@ func initializeGeoIP() error {
 		}
 
 	} else {
-		file, err := os.Open(c.GeoIPPath)
+		file, err := os.Open(path)
 		if err != nil {
 			return err
 		}
-		geolog.Info("(re)loading File: ", c.GeoIPPath)
+		geolog.Info("(re)loading File: ", path)
 		defer file.Close()
 		n, err := file.Read(scanner)
 		if err != nil {
@@ -77,8 +79,8 @@ func initializeGeoIP() error {
 	return nil
 }
 
-// check an IP against exclude and include list and returns if this IP should be included
-// or excluded. returns true if this IP is allowed to pass through
+// checkGeoIPSkip checks an IP address against the exclude and include lists and returns
+// true if the IP address should be allowed to pass through.
 func checkGeoIPSkip(ipport string) bool {
 	if c.mmdb == nil {
 		return true

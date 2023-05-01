@@ -13,6 +13,7 @@ require (
 	github.com/prometheus/client_golang v1.15.0
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
 	github.com/spf13/cobra v1.7.0
+	github.com/yl2chen/cidranger v1.0.2
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
 	golang.org/x/net v0.9.0
 )

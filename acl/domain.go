@@ -148,7 +148,7 @@ func (d *domain) LoadDomainsCsv(Filename string) error {
 	return nil
 }
 
-func (d *domain) LoadDomainsCsvWorker() {
+func (d *domain) LoadDomainsCSVWorker() {
 	for {
 		d.LoadDomainsCsv(d.Path)
 		time.Sleep(d.RefreshInterval)
@@ -179,8 +179,7 @@ func (d *domain) Config(logger *slog.Logger, c *koanf.Koanf) error {
 	d.routeFQDNs = make(map[string]uint8)
 	d.Path = c.String("path")
 	d.RefreshInterval = c.Duration("refresh_interval")
-	// BUG: refresh interval not running
-	go d.LoadDomainsCsvWorker()
+	go d.LoadDomainsCSVWorker()
 	return nil
 }
 

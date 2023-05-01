@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/mosajjal/sniproxy/acl"
 	slog "golang.org/x/exp/slog"
 	"golang.org/x/net/proxy"
 )
@@ -32,11 +33,6 @@ func handleReverse(conn net.Conn) error {
 
 func handle443(conn net.Conn) error {
 	c.recievedHTTPS.Inc(1)
-	if !checkGeoIPSkip(conn.RemoteAddr().String()) {
-		httpslog.Warn("Rejected request due to GEOIP restriction", "ip", conn.RemoteAddr().String())
-		conn.Close()
-		return nil
-	}
 
 	defer conn.Close()
 	incoming := make([]byte, 2048)
@@ -50,8 +46,19 @@ func handle443(conn net.Conn) error {
 		httpslog.Error(err.Error())
 		return err
 	}
+	connInfo := acl.ConnInfo{
+		SrcIP:  conn.RemoteAddr(),
+		Domain: sni,
+	}
+	c.acl.MakeDecision(&connInfo)
+
+	if connInfo.Decision == acl.Reject {
+		httpslog.Warn("Rejected request due to GEOIP restriction", "ip", conn.RemoteAddr().String())
+		conn.Close()
+		return nil
+	}
 	// check SNI against domainlist for an extra layer of security
-	if !c.AllDomains && inDomainList(sni+".") {
+	if connInfo.Decision == acl.OriginIP {
 		httpslog.Warn("a client requested connection to " + sni + ", but it's not allowed as per configuration.. resetting TCP")
 		conn.Close()
 		return nil

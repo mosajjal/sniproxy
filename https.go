@@ -53,7 +53,7 @@ func handle443(conn net.Conn) error {
 	c.acl.MakeDecision(&connInfo)
 
 	if connInfo.Decision == acl.Reject {
-		httpslog.Warn("Rejected request due to GEOIP restriction", "ip", conn.RemoteAddr().String())
+		httpslog.Warn("ACL rejection", "ip", conn.RemoteAddr().String())
 		conn.Close()
 		return nil
 	}

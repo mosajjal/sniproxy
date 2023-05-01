@@ -76,7 +76,8 @@ var c runConfig
 //go:embed config.defaults.yaml
 var defaultConfig []byte
 
-var log = slog.New(slog.NewTextHandler(os.Stderr))
+var logLevel = new(slog.LevelVar)
+var log = slog.New(slog.HandlerOptions{Level: logLevel}.NewTextHandler(os.Stderr))
 
 func pipe(conn1 net.Conn, conn2 net.Conn) {
 	chan1 := getChannel(conn1)
@@ -235,6 +236,19 @@ func main() {
 		if err := k.Load(file.Provider(*config), yaml.Parser()); err != nil {
 			panic(err)
 		}
+	}
+
+	switch k.String("log_level") {
+	case "debug":
+		logLevel.Set(slog.LevelDebug)
+	case "info":
+		logLevel.Set(slog.LevelInfo)
+	case "warn":
+		logLevel.Set(slog.LevelWarn)
+	case "error":
+		logLevel.Set(slog.LevelError)
+	default:
+		logLevel.Set(slog.LevelInfo)
 	}
 
 	// verify and load config

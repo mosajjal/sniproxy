@@ -89,10 +89,7 @@ func Test_reverse(t *testing.T) {
 // 1. a TST for all the prefixes (type 1)
 // 2. a TST for all the suffixes (type 2)
 // 3. a hashtable for all the full match fqdn (type 3)
-func (d domain) LoadDomainsCsv(Filename string) (*tst.TernarySearchTree, *tst.TernarySearchTree, map[string]uint8, error) {
-	prefix := tst.New()
-	suffix := tst.New()
-	all := make(map[string]uint8)
+func (d *domain) LoadDomainsCsv(Filename string) error {
 	d.logger.Info("Loading the domain from file/url")
 	var scanner *bufio.Scanner
 	if strings.HasPrefix(Filename, "http://") || strings.HasPrefix(Filename, "https://") {
@@ -106,7 +103,7 @@ func (d domain) LoadDomainsCsv(Filename string) (*tst.TernarySearchTree, *tst.Te
 		resp, err := client.Get(Filename)
 		if err != nil {
 			d.logger.Error(err.Error())
-			return prefix, suffix, all, err
+			return err
 		}
 		d.logger.Info("(re)fetching URL", "url", Filename)
 		defer resp.Body.Close()
@@ -115,13 +112,12 @@ func (d domain) LoadDomainsCsv(Filename string) (*tst.TernarySearchTree, *tst.Te
 	} else {
 		file, err := os.Open(Filename)
 		if err != nil {
-			return prefix, suffix, all, err
+			return err
 		}
 		d.logger.Info("(re)loading File", "file", Filename)
 		defer file.Close()
 		scanner = bufio.NewScanner(file)
 	}
-
 	for scanner.Scan() {
 		lowerCaseLine := strings.ToLower(scanner.Text())
 		// split the line by comma to understand thed.logger.c
@@ -133,23 +129,30 @@ func (d domain) LoadDomainsCsv(Filename string) (*tst.TernarySearchTree, *tst.Te
 		// add the fqdn to the hashtable with its type
 		switch entryType := fqdn[1]; entryType {
 		case "prefix":
-			all[fqdn[0]] = matchPrefix
-			prefix.Insert(fqdn[0], fqdn[0])
+			d.routeFQDNs[fqdn[0]] = matchPrefix
+			d.routePrefixes.Insert(fqdn[0], fqdn[0])
 		case "suffix":
-			all[fqdn[0]] = matchSuffix
+			d.routeFQDNs[fqdn[0]] = matchSuffix
 			// suffix match is much faster if we reverse the strings and match for prefix
-			suffix.Insert(reverse(fqdn[0]), fqdn[0])
+			d.routeSuffixes.Insert(reverse(fqdn[0]), fqdn[0])
 		case "fqdn":
-			all[fqdn[0]] = matchFQDN
+			d.routeFQDNs[fqdn[0]] = matchFQDN
 		default:
 			//d.logger.Warnf("%s is not a valid line, assuming fqdn", lowerCaseLine)
 			d.logger.Info(lowerCaseLine + " is not a valid line, assuming FQDN")
-			all[fqdn[0]] = matchFQDN
+			d.routeFQDNs[fqdn[0]] = matchFQDN
 		}
 	}
-	d.logger.Info(fmt.Sprintf("%s loaded with %d prefix, %d suffix and %d fqdn", Filename, prefix.Len(), suffix.Len(), len(all)-prefix.Len()-suffix.Len()))
+	d.logger.Info(fmt.Sprintf("%s loaded with %d prefix, %d suffix and %d fqdn", Filename, d.routePrefixes.Len(), d.routeSuffixes.Len(), len(d.routeFQDNs)-d.routePrefixes.Len()-d.routeSuffixes.Len()))
 
-	return prefix, suffix, all, nil
+	return nil
+}
+
+func (d *domain) LoadDomainsCsvWorker() {
+	for {
+		d.LoadDomainsCsv(d.Path)
+		time.Sleep(d.RefreshInterval)
+	}
 }
 
 // implement domain as an ACL interface
@@ -176,13 +179,8 @@ func (d *domain) Config(logger *slog.Logger, c *koanf.Koanf) error {
 	d.routeFQDNs = make(map[string]uint8)
 	d.Path = c.String("path")
 	d.RefreshInterval = c.Duration("refresh_interval")
-	prefix, suffix, all, err := d.LoadDomainsCsv(d.Path)
-	if err != nil {
-		return err
-	}
-	d.routePrefixes = prefix
-	d.routeSuffixes = suffix
-	d.routeFQDNs = all
+	// BUG: refresh interval not running
+	go d.LoadDomainsCsvWorker()
 	return nil
 }
 

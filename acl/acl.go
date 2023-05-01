@@ -52,7 +52,8 @@ func (a *ACL) StartACLs(log *slog.Logger, k *koanf.Koanf) error {
 			continue
 		}
 		// TODO: set up a new logger with a service name of the ACL
-		if err := (*acl).Config(log, cutK); err != nil {
+		l := slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue((*acl).Name())}}))
+		if err := (*acl).Config(l, cutK); err != nil {
 			return err
 		}
 		a.activeACLs = append(a.activeACLs, acl)

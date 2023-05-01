@@ -49,7 +49,7 @@ func (g geoIP) getCountry(ipAddr string) (string, error) {
 }
 
 // initializeGeoIP loads the geolocation database from the specified g.Path.
-func (g geoIP) initializeGeoIP() error {
+func (g *geoIP) initializeGeoIP() error {
 
 	g.logger.Info("Loading the domain from file/url")
 	var scanner []byte
@@ -59,7 +59,7 @@ func (g geoIP) initializeGeoIP() error {
 		if err != nil {
 			return err
 		}
-		g.logger.Info("(re)fetching", "g.Path", g.Path)
+		g.logger.Info("(re)fetching", "Path", g.Path)
 		defer resp.Body.Close()
 		scanner, err = io.ReadAll(resp.Body)
 		if err != nil {
@@ -98,17 +98,19 @@ func (g geoIP) initializeGeoIP() error {
 
 // checkGeoIPSkip checks an IP address against the exclude and include lists and returns
 // true if the IP address should be allowed to pass through.
-func (g geoIP) checkGeoIPSkip(ipport string) bool {
+func (g geoIP) checkGeoIPSkip(addr net.Addr) bool {
 	if g.mmdb == nil {
 		return true
 	}
 
-	ipPort := strings.Split(ipport, ":")
+	ipPort := strings.Split(addr.String(), ":")
 	ip := ipPort[0]
 
 	var country string
 	country, err := g.getCountry(ip)
 	country = strings.ToLower(country)
+	g.logger.Debug("incoming TCP connection", "ip", ip, "country", country)
+
 	if err != nil {
 		g.logger.Info("Failed to get the geolocation of", "ip", ip, "country", country)
 		return false
@@ -132,9 +134,11 @@ func (g geoIP) checkGeoIPSkip(ipport string) bool {
 // implement the ACL interface
 func (g geoIP) Decide(c *ConnInfo) error {
 	// in checkGeoIPSkip, false is reject
-	if !g.checkGeoIPSkip(c.SrcIP.String()) {
+	if !g.checkGeoIPSkip(c.SrcIP) {
+		g.logger.Info("Rejecting connection from", "ip", c.SrcIP)
 		c.Decision = Reject
 	}
+	g.logger.Debug("GeoIP decision", "ip", c.SrcIP, "decision", c.Decision)
 	return nil
 }
 func (g geoIP) Name() string {
@@ -146,7 +150,8 @@ func (g *geoIP) Config(logger *slog.Logger, c *koanf.Koanf) error {
 	g.Include = toLowerSlice(c.Strings("include"))
 	g.Exclude = toLowerSlice(c.Strings("exclude"))
 	g.Refresh = c.Duration("refresh_interval")
-	return g.initializeGeoIP()
+	go g.initializeGeoIP()
+	return nil
 }
 
 // Register the geoIP ACL

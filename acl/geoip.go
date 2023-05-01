@@ -25,6 +25,13 @@ type geoIP struct {
 	logger  *slog.Logger
 }
 
+func toLowerSlice(in []string) (out []string) {
+	for _, v := range in {
+		out = append(out, strings.ToLower(v))
+	}
+	return
+}
+
 // getCountry returns the country code for the given IP address.
 func (g geoIP) getCountry(ipAddr string) (string, error) {
 	ip := net.ParseIP(ipAddr)
@@ -136,8 +143,8 @@ func (g geoIP) Name() string {
 func (g *geoIP) Config(logger *slog.Logger, c *koanf.Koanf) error {
 	g.logger = logger
 	g.Path = c.String("path")
-	g.Include = c.Strings("include")
-	g.Exclude = c.Strings("exclude")
+	g.Include = toLowerSlice(c.Strings("include"))
+	g.Exclude = toLowerSlice(c.Strings("exclude"))
 	g.Refresh = c.Duration("refresh_interval")
 	return g.initializeGeoIP()
 }

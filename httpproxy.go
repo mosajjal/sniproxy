@@ -3,11 +3,13 @@ package main
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/mosajjal/sniproxy/acl"
 	slog "golang.org/x/exp/slog"
 )
 
@@ -58,12 +60,19 @@ func runHTTP() {
 
 func handle80(w http.ResponseWriter, r *http.Request) {
 	c.recievedHTTP.Inc(1)
-	if !checkGeoIPSkip(r.RemoteAddr) {
+
+	addr, err := net.ResolveTCPAddr("tcp", r.RemoteAddr)
+
+	connInfo := acl.ConnInfo{
+		SrcIP:  addr,
+		Domain: r.Host,
+	}
+	c.acl.MakeDecision(&connInfo)
+	if connInfo.Decision == acl.Reject || connInfo.Decision == acl.ProxyIP || err != nil {
+		httplog.Info("rejected request", "ip", r.RemoteAddr)
 		http.Error(w, "Could not reach origin server", 403)
 		return
 	}
-	httplog.Info("rejected request", "ip", r.RemoteAddr)
-
 	// if the URL starts with the public IP, it needs to be skipped to avoid loops
 	if strings.HasPrefix(r.Host, c.PublicIPv4) {
 		httplog.Warn("someone is requesting HTTP to sniproxy itself, ignoring...")
@@ -96,11 +105,11 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 	rr.URL.Host = r.Host
 
 	// check to see if this host is listed to be processed, otherwise RESET
-	if !c.AllDomains && inDomainList(r.Host+".") {
-		http.Error(w, "Could not reach origin server", 403)
-		httplog.Warn("a client requested connection to " + r.Host + ", but it's not allowed as per configuration.. sending 403")
-		return
-	}
+	// if !c.AllDomains && inDomainList(r.Host+".") {
+	// 	http.Error(w, "Could not reach origin server", 403)
+	// 	httplog.Warn("a client requested connection to " + r.Host + ", but it's not allowed as per configuration.. sending 403")
+	// 	return
+	// }
 
 	// if host is the reverse proxy, this request needs to be handled by the upstream address
 	if r.Host == c.reverseProxySNI {

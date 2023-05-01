@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -12,10 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/knadh/koanf"
+	"github.com/knadh/koanf/parsers/yaml"
+	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/providers/rawbytes"
+
 	prometheusmetrics "github.com/deathowl/go-metrics-prometheus"
-	"github.com/golang-collections/collections/tst"
 	"github.com/mosajjal/dnsclient"
-	"github.com/oschwald/maxminddb-golang"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rcrowley/go-metrics"
 
@@ -25,41 +27,33 @@ import (
 	"github.com/miekg/dns"
 	slog "golang.org/x/exp/slog"
 	"golang.org/x/net/proxy"
+
+	_ "embed"
+
+	"github.com/mosajjal/sniproxy/acl"
 )
 
 type runConfig struct {
-	BindIP                    string   `json:"bindIP"`
-	PublicIPv4                string   `json:"publicIPv4"`
-	PublicIPv6                string   `json:"publicIPv6"`
-	UpstreamDNS               string   `json:"upstreamDNS"`
-	UpstreamSOCKS5            string   `json:"upstreamSOCKS5"`
-	DomainListPath            string   `json:"domainListPath"`
-	DomainListRefreshInterval duration `json:"domainListRefreshInterval"`
-	BindDNSOverTCP            bool     `json:"bindDnsOverTcp"`
-	BindDNSOverTLS            bool     `json:"bindDnsOverTls"`
-	BindDNSOverQuic           bool     `json:"bindDnsOverQuic"`
-	AllDomains                bool     `json:"allDomains"`
-	TLSCert                   string   `json:"tlsCert"`
-	TLSKey                    string   `json:"tlsKey"`
-	ReverseProxy              string   `json:"reverseProxy"`
-	ReverseProxyCert          string   `json:"reverseProxyCert"`
-	ReverseProxyKey           string   `json:"reverseProxyKey"`
-	HTTPPort                  uint     `json:"httpPort"`
-	HTTPSPort                 uint     `json:"httpsPort"`
-	DNSPort                   uint     `json:"dnsPort"`
-	Interface                 string   `json:"interface"`
-	Prometheus                string   `json:"prometheus"`
+	BindIP           string `yaml:"bind_ip"`
+	PublicIPv4       string `yaml:"public_ipv4"`
+	PublicIPv6       string `yaml:"public_ipv6"`
+	UpstreamDNS      string `yaml:"upstream_dns"`
+	UpstreamSOCKS5   string `yaml:"upstream_socks5"`
+	BindDNSOverTCP   bool   `yaml:"bind_dns_over_tcp"`
+	BindDNSOverTLS   bool   `yaml:"bind_dns_over_tls"`
+	BindDNSOverQuic  bool   `yaml:"bind_dns_over_quic"`
+	TLSCert          string `yaml:"tls_cert"`
+	TLSKey           string `yaml:"tls_key"`
+	ReverseProxy     string `yaml:"reverse_proxy"`
+	ReverseProxyCert string `yaml:"reverse_proxy_cert"`
+	ReverseProxyKey  string `yaml:"reverse_proxy_key"`
+	HTTPPort         uint   `yaml:"http_port"`
+	HTTPSPort        uint   `yaml:"https_port"`
+	DNSPort          uint   `yaml:"dns_port"`
+	Interface        string `yaml:"interface"`
+	Prometheus       string `yaml:"prometheus"`
 
-	routePrefixes *tst.TernarySearchTree
-	routeSuffixes *tst.TernarySearchTree
-	routeFQDNs    map[string]uint8
-
-	GeoIPPath            string        `json:"geoipPath"`
-	GeoIPRefreshInterval time.Duration `json:"geoipRefreshInterval"`
-	GeoIPInclude         []string      `json:"geoipInclude"`
-	GeoIPExclude         []string      `json:"geoipExculde"`
-
-	mmdb *maxminddb.Reader
+	acl *acl.ACL
 
 	dnsClient  DNSClient
 	dialer     proxy.Dialer
@@ -78,6 +72,9 @@ type runConfig struct {
 }
 
 var c runConfig
+
+//go:embed config.defaults.yaml
+var defaultConfig []byte
 
 var log = slog.New(slog.NewTextHandler(os.Stderr))
 
@@ -230,40 +227,7 @@ func main() {
 		},
 	}
 	flags := cmd.Flags()
-	flags.StringVar(&c.BindIP, "bindIP", "0.0.0.0", "Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0")
-	flags.StringVar(&c.UpstreamDNS, "upstreamDNS", "udp://8.8.8.8:53", "Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query")
-	flags.StringVar(&c.UpstreamSOCKS5, "upstreamSOCKS5", "", "Use a SOCKS proxy for upstream HTTP/HTTPS traffic. Example: socks5://admin:admin@127.0.0.1:1080")
-	flags.StringVar(&c.DomainListPath, "domainListPath", "", "Path to the domain list. eg: /tmp/domainlist.csv. Look at the example file for the format. ")
-	flags.DurationVar(&c.DomainListRefreshInterval.Duration, "domainListRefreshInterval", 60*time.Minute, "Interval to re-fetch the domain list")
-	flags.BoolVar(&c.AllDomains, "allDomains", false, "Route all HTTP(s) traffic through the SNI proxy")
-	flags.StringVar(&c.PublicIPv4, "publicIPv4", getPublicIPv4(), "Public IP of the server, reply address of DNS A queries")
-	flags.StringVar(&c.PublicIPv6, "publicIPv6", getPublicIPv6(), "Public IPv6 of the server, reply address of DNS AAAA queries")
-	flags.BoolVar(&c.BindDNSOverTCP, "bindDnsOverTcp", false, "enable DNS over TCP as well as UDP")
-	flags.BoolVar(&c.BindDNSOverTLS, "bindDnsOverTls", false, "enable DNS over TLS as well as UDP")
-	flags.BoolVar(&c.BindDNSOverQuic, "bindDnsOverQuic", false, "enable DNS over QUIC as well as UDP")
-	flags.StringVar(&c.TLSCert, "tlsCert", "", "Path to the certificate for DoH, DoT and DoQ. eg: /tmp/mycert.pem")
-	flags.StringVar(&c.TLSKey, "tlsKey", "", "Path to the certificate key for DoH, DoT and DoQ. eg: /tmp/mycert.key")
-
-	// set an domain to be redirected to a real webserver. essentially adding a simple reverse proxy to sniproxy
-	flags.StringVar(&c.ReverseProxy, "reverseProxy", "", "enable reverse proxy for a specific FQDN and upstream URL. example: www.example.com::http://127.0.0.1:4001")
-	flags.StringVar(&c.ReverseProxyCert, "reverseProxyCert", "", "Path to the certificate for reverse proxy. eg: /tmp/mycert.pem")
-	flags.StringVar(&c.ReverseProxyKey, "reverseProxyKey", "", "Path to the certificate key for reverse proxy. eg: /tmp/mycert.key")
-
-	// geoip helper to limit client countries
-	flags.StringVar(&c.GeoIPPath, "geoipPath", "", "path to MMDB URL/path\nExample: https://raw.githubusercontent.com/Loyalsoldier/geoip/release/Country.mmdb")
-	flags.DurationVar(&c.GeoIPRefreshInterval, "geoipRefreshInterval", time.Hour, "MMDB refresh interval")
-	flags.StringSliceVar(&c.GeoIPExclude, "geoipExclude", []string{""}, "Exclude countries to be allowed to connect. example: US,CA")
-	flags.StringSliceVar(&c.GeoIPInclude, "geoipInclude", []string{""}, "Include countries to be allowed to connect. example: US,CA")
-
-	flags.UintVar(&c.HTTPPort, "httpPort", 80, "HTTP Port to listen on. Should remain 80 in most cases")
-	flags.UintVar(&c.HTTPSPort, "httpsPort", 443, "HTTPS Port to listen on. Should remain 443 in most cases")
-	flags.UintVar(&c.DNSPort, "dnsPort", 53, "DNS Port to listen on. Should remain 53 in most cases")
-
-	flags.StringVar(&c.Interface, "interface", "", "Interface used for outbound TLS connections. uses OS prefered one if empty")
-
-	flags.StringVar(&c.Prometheus, "prometheus", "", "Enable prometheus endpoint on IP:PORT. example: 127.0.0.1:8080. Always exposes /metrics and only supports HTTP")
-
-	config := flags.StringP("config", "c", "", "path to JSON configuration file")
+	config := flags.StringP("config", "c", "", "path to YAML configuration file")
 	if err := cmd.Execute(); err != nil {
 		log.Error("failed to execute command", err)
 		return
@@ -272,24 +236,42 @@ func main() {
 		return
 	}
 
+	k := koanf.New(".")
+	// load the defaults
+	if err := k.Load(rawbytes.Provider(defaultConfig), yaml.Parser()); err != nil {
+		panic(err)
+	}
 	if *config != "" {
-		configFile, err := os.Open(*config)
-		if err != nil {
-			log.Error("failed to open config file", err)
-		}
-		defer configFile.Close()
-		fileStat, _ := configFile.Stat()
-		configBytes := make([]byte, fileStat.Size())
-		_, err = configFile.Read(configBytes)
-		if err != nil {
-			log.Error("Could not read the config file", err)
-		}
-
-		err = json.Unmarshal(configBytes, &c)
-		if err != nil {
-			log.Error("failed to parse config file", err)
+		if err := k.Load(file.Provider(*config), yaml.Parser()); err != nil {
+			panic(err)
 		}
 	}
+
+	// verify and load config
+	generalConfig := k.Cut("general")
+
+	c.BindIP = generalConfig.String("bind_ip")
+	c.UpstreamDNS = generalConfig.String("upstream_dns")
+	c.UpstreamSOCKS5 = generalConfig.String("upstream_socks5")
+	c.BindDNSOverTCP = generalConfig.Bool("bind_dns_over_tcp")
+	c.BindDNSOverTLS = generalConfig.Bool("bind_dns_over_tls")
+	c.BindDNSOverQuic = generalConfig.Bool("bind_dns_over_quic")
+	c.TLSCert = generalConfig.String("tls_cert")
+	c.TLSKey = generalConfig.String("tls_key")
+	c.DNSPort = uint(generalConfig.Int("dns_port"))
+	c.HTTPPort = uint(generalConfig.Int("http_port"))
+	c.HTTPSPort = uint(generalConfig.Int("https_port"))
+	c.Interface = generalConfig.String("interface")
+	c.PublicIPv4 = generalConfig.String("public_ipv4")
+	c.PublicIPv6 = generalConfig.String("public_ipv6")
+	c.ReverseProxy = generalConfig.String("reverse_proxy")
+	c.ReverseProxyCert = generalConfig.String("reverse_proxy_cert")
+	c.ReverseProxyKey = generalConfig.String("reverse_proxy_key")
+	c.Prometheus = generalConfig.String("prometheus")
+
+	aclConfig := k.Cut("acl")
+	c.acl = new(acl.ACL)
+	c.acl.StartACLs(log, aclConfig)
 
 	// set up metrics
 	c.recievedDNS = metrics.GetOrRegisterCounter("dns.requests.recieved", metrics.DefaultRegistry)
@@ -313,10 +295,10 @@ func main() {
 		}()
 	}
 
-	if c.DomainListPath == "" {
-		log.Warn("Domain list (--domainListPath) is not specified, routing ALL domains through the SNI proxy")
-		c.AllDomains = true
-	}
+	// if c.DomainListPath == "" {
+	// 	log.Warn("Domain list (--domainListPath) is not specified, routing ALL domains through the SNI proxy")
+	// 	c.AllDomains = true
+	// }
 	if c.PublicIPv4 != "" {
 		log.Info("server info", "public_ip", c.PublicIPv4)
 	} else {
@@ -350,18 +332,18 @@ func main() {
 	}
 
 	// throw an error if geoip include or exclude is present, but geoippath is not
-	if c.GeoIPPath == "" && (len(c.GeoIPInclude)+len(c.GeoIPExclude) >= 1) {
-		log.Error("GeoIP include or exclude is present, but GeoIPPath is not")
-	}
-
-	// load mmdb if provided
-	if c.GeoIPPath != "" {
-		go initializeGeoIP(c.GeoIPPath)
-		c.GeoIPExclude = toLowerSlice(c.GeoIPExclude)
-		log.Info("GeoIP", "exclude", c.GeoIPExclude)
-		c.GeoIPInclude = toLowerSlice(c.GeoIPInclude)
-		log.Info("GeoIP", "include", c.GeoIPInclude)
-	}
+	// if c.GeoIPPath == "" && (len(c.GeoIPInclude)+len(c.GeoIPExclude) >= 1) {
+	// 	log.Error("GeoIP include or exclude is present, but GeoIPPath is not")
+	// }
+	//
+	// // load mmdb if provided
+	// if c.GeoIPPath != "" {
+	// 	go initializeGeoIP(c.GeoIPPath)
+	// 	c.GeoIPExclude = toLowerSlice(c.GeoIPExclude)
+	// 	log.Info("GeoIP", "exclude", c.GeoIPExclude)
+	// 	c.GeoIPInclude = toLowerSlice(c.GeoIPInclude)
+	// 	log.Info("GeoIP", "include", c.GeoIPInclude)
+	// }
 
 	// Finds source addr for outbound connections if interface is not empty
 	if c.Interface != "" {
@@ -413,14 +395,15 @@ func main() {
 	go runDNS()
 
 	// fetch domain list and refresh them periodically
-	if !c.AllDomains {
-		c.routePrefixes, c.routeSuffixes, c.routeFQDNs, _ = LoadDomainsCsv(c.DomainListPath)
-		for range time.NewTicker(c.DomainListRefreshInterval.Duration).C {
-			c.routePrefixes, c.routeSuffixes, c.routeFQDNs, _ = LoadDomainsCsv(c.DomainListPath)
-		}
-	} else {
-		select {}
-	}
+	// if !c.AllDomains {
+	// 	c.routePrefixes, c.routeSuffixes, c.routeFQDNs, _ = LoadDomainsCsv(c.DomainListPath)
+	// 	for range time.NewTicker(c.DomainListRefreshInterval.Duration).C {
+	// 		c.routePrefixes, c.routeSuffixes, c.routeFQDNs, _ = LoadDomainsCsv(c.DomainListPath)
+	// 	}
+	// } else {
+	// 	select {}
+	// }
+	select {}
 }
 
 func toLowerSlice(in []string) (out []string) {

@@ -70,7 +70,7 @@ func handle443(conn net.Conn) error {
 		return err
 	}
 	// TODO: handle timeout and context here
-	if rAddr.IsLoopback() || rAddr.IsPrivate() || rAddr.Equal(net.IPv4(0, 0, 0, 0)) || rAddr.Equal(net.IP(c.PublicIPv4)) {
+	if rAddr.IsLoopback() || rAddr.IsPrivate() || rAddr.Equal(net.IPv4(0, 0, 0, 0)) || rAddr.Equal(net.IP(c.PublicIPv4)) || rAddr.Equal(net.IP(c.sourceAddr)) || rAddr.Equal(net.IP(c.PublicIPv6)) {
 		httpslog.Info("connection to private IP or self ignored")
 		return nil
 	}
@@ -94,14 +94,14 @@ func handle443(conn net.Conn) error {
 		}
 		target, err = net.DialTCP("tcp", &srcAddr, &net.TCPAddr{IP: rAddr, Port: rPort})
 		if err != nil {
-			httpslog.Error("could not connect to target", err)
+			httpslog.Error("could not connect to target", "detail", err)
 			conn.Close()
 			return err
 		}
 	} else {
 		tmp, err := c.dialer.Dial("tcp", fmt.Sprintf("%s:%d", rAddr, rPort))
 		if err != nil {
-			httpslog.Error("could not connect to target", err)
+			httpslog.Error("could not connect to target", "detail", err)
 			conn.Close()
 			return err
 		}

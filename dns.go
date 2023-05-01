@@ -54,7 +54,7 @@ func (dnsc *DNSClient) performExternalAQuery(fqdn string, QType uint16) ([]dns.R
 func processQuestion(q dns.Question, decision acl.Decision) ([]dns.RR, error) {
 	c.recievedDNS.Inc(1)
 	// Check to see if we should respond with our own IP
-	if decision == acl.ProxyIP {
+	if decision == acl.ProxyIP || decision == acl.Accept {
 		// Return the public IP.
 		c.proxiedDNS.Inc(1)
 		dnslog.Info("returned sniproxy address for domain", "fqdn", q.Name)

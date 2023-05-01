@@ -117,12 +117,7 @@ func getChannel(conn net.Conn) chan []byte {
 	return c
 }
 
-func getPublicIPv4() string {
-	pub, _ := getPublicIPv4Inner()
-	return pub
-}
-
-func getPublicIPv4Inner() (string, error) {
+func getPublicIPv4() (string, error) {
 	conn, err := net.Dial("udp", "8.8.8.8:53")
 	if err != nil {
 		return "", err
@@ -164,18 +159,13 @@ func getPublicIPv4Inner() (string, error) {
 	return "", nil
 }
 
-func getPublicIPv6() string {
-	pub, _ := getPublicIPv6Inner()
-	return pub
-}
-
 func cleanIPv6(ip string) string {
 	ip = strings.TrimPrefix(ip, "[")
 	ip = strings.TrimSuffix(ip, "]")
 	return ip
 }
 
-func getPublicIPv6Inner() (string, error) {
+func getPublicIPv6() (string, error) {
 	conn, err := net.Dial("udp6", "[2001:4860:4860::8888]:53")
 	if err != nil {
 		return "", err
@@ -263,7 +253,13 @@ func main() {
 	c.HTTPSPort = uint(generalConfig.Int("https_port"))
 	c.Interface = generalConfig.String("interface")
 	c.PublicIPv4 = generalConfig.String("public_ipv4")
+	if c.PublicIPv4 == "" {
+		c.PublicIPv4, _ = getPublicIPv4()
+	}
 	c.PublicIPv6 = generalConfig.String("public_ipv6")
+	if c.PublicIPv6 == "" {
+		c.PublicIPv6, _ = getPublicIPv6()
+	}
 	c.ReverseProxy = generalConfig.String("reverse_proxy")
 	c.ReverseProxyCert = generalConfig.String("reverse_proxy_cert")
 	c.ReverseProxyKey = generalConfig.String("reverse_proxy_key")
@@ -404,11 +400,4 @@ func main() {
 	// 	select {}
 	// }
 	select {}
-}
-
-func toLowerSlice(in []string) (out []string) {
-	for _, v := range in {
-		out = append(out, strings.ToLower(v))
-	}
-	return
 }

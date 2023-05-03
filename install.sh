@@ -72,7 +72,7 @@ wget -O /opt/sniproxy/yq http://bin.n0p.me/yq
 chmod +x /opt/sniproxy/yq
 
 # download the default config
-wget -O /opt/sniproxy/sniproxy.yaml https://raw.githubusercontent.com/mosajjal/sniproxy/master/config.defaults.yaml 
+wget -O /opt/sniproxy/sniproxy.yaml https://raw.githubusercontent.com/mosajjal/sniproxy/v2/config.defaults.yaml
 
 # ask which domains to proxy
 echo "sniproxy can proxy all HTTPS traffic or only specific domains, if you have a domain list URL, enter it below, otherwise press Enter to proxy all HTTPS traffic"

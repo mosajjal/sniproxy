@@ -12,7 +12,7 @@ func TestDNSClient_lookupDomain4(t *testing.T) {
 	if err != nil {
 		t.Errorf("failed to set up DNS client")
 	}
-	dnsc := DNSClient{C: tmp}
+	dnsc := DNSClient{tmp}
 	tests := []struct {
 		client  DNSClient
 		name    string

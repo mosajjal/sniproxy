@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net"
+	"net/netip"
 
 	"github.com/mosajjal/sniproxy/acl"
 	slog "golang.org/x/exp/slog"
@@ -23,7 +24,10 @@ func handleReverse(conn net.Conn) error {
 		IP:   c.sourceAddr,
 		Port: 0,
 	}
-	target, err := net.DialTCP("tcp", &srcAddr, &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: int(c.HTTPPort)})
+	// break down bindhttp to ip and port. since bindHTTP is already checked when starting to listen on HTTP, we can assume it's a valid address
+	// and ignore the error
+	httpAddrPort, _ := netip.ParseAddrPort(c.BindHTTP)
+	target, err := net.DialTCP("tcp", &srcAddr, net.TCPAddrFromAddrPort(httpAddrPort))
 	if err != nil {
 		return err
 	}
@@ -146,7 +150,7 @@ func runReverse() {
 
 func runHTTPS() {
 
-	l, err := net.Listen("tcp", c.BindIP+fmt.Sprintf(":%d", c.HTTPSPort))
+	l, err := net.Listen("tcp", c.BindHTTPS)
 	if err != nil {
 		httpslog.Error(err.Error())
 		panic(-1)

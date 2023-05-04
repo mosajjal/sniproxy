@@ -13,6 +13,10 @@ import (
 	slog "golang.org/x/exp/slog"
 )
 
+// CIDR acl allows sniproxy to use a list of CIDR to allow or reject connections
+// The list is loaded from a file or URL and refreshed periodically
+// The list is a CSV file with the CIDR in the first column and the policy in the second
+// The policy can be allow or reject and defaults to reject
 type cidr struct {
 	Path            string        `yaml:"path"`
 	RefreshInterval time.Duration `yaml:"refresh_interval"`
@@ -95,7 +99,7 @@ func (d *cidr) loadCIDRCSVWorker() {
 	}
 }
 
-// implement CIDR as an ACL interface
+// Decide checks if the connection is allowed or rejected
 func (d cidr) Decide(c *ConnInfo) error {
 	// check reject first
 	c.Decision = Reject
@@ -112,10 +116,14 @@ func (d cidr) Decide(c *ConnInfo) error {
 	}
 	return nil
 }
+
+// Name function is used to cut the YAML config file to be passed on to the ACL for config
 func (d cidr) Name() string {
 	return "cidr"
 }
-func (d *cidr) Config(logger *slog.Logger, c *koanf.Koanf) error {
+
+// Config function is what starts the ACL
+func (d *cidr) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
 	d.logger = logger
 	d.Path = c.String("path")
 	d.RefreshInterval = c.Duration("refresh_interval")
@@ -123,7 +131,7 @@ func (d *cidr) Config(logger *slog.Logger, c *koanf.Koanf) error {
 	return nil
 }
 
-// Register the geoIP ACL
+// make the acl available at import time
 func init() {
-	tmpACLs.register(&cidr{})
+	availableACLs = append(availableACLs, &cidr{})
 }

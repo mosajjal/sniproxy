@@ -14,6 +14,8 @@ import (
 	slog "golang.org/x/exp/slog"
 )
 
+// domain ACL makes a decision on a connection based on the domain name derived
+// from client hello's SNI. It can be used to skip the sni proxy for certain domains
 type domain struct {
 	Path            string        `yaml:"domain.path"`
 	RefreshInterval time.Duration `yaml:"domain.refresh_interval"`
@@ -64,7 +66,8 @@ func reverse(s string) string {
 	return string(r)
 }
 
-func Test_reverse(t *testing.T) {
+// TestReverse tests the reverse function
+func TestReverse(t *testing.T) {
 	tests := []struct {
 		name string
 		s    string
@@ -172,7 +175,7 @@ func (d domain) Decide(c *ConnInfo) error {
 func (d domain) Name() string {
 	return "domain"
 }
-func (d *domain) Config(logger *slog.Logger, c *koanf.Koanf) error {
+func (d *domain) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
 	d.logger = logger
 	d.routePrefixes = tst.New()
 	d.routeSuffixes = tst.New()
@@ -183,7 +186,7 @@ func (d *domain) Config(logger *slog.Logger, c *koanf.Koanf) error {
 	return nil
 }
 
-// Register the geoIP ACL
+// make domain available to the ACL system at import time
 func init() {
-	tmpACLs.register(&domain{})
+	availableACLs = append(availableACLs, &domain{})
 }

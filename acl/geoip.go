@@ -14,15 +14,21 @@ import (
 	slog "golang.org/x/exp/slog"
 )
 
-// var g.logger = slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue("geoip")}}))
-
+// geoIP is an ACL that checks the geolocation of incoming connections and
+// allows or rejects them based on the country of origin. It uses an MMDB
+// database file to determine the country of origin.
+// unlike ip and domain ACLs, geoIP does not load the list of countries
+// from a CSV file. Instead it reads the country codes to reject or accept
+// from the YAML configuration. This is due to the fact that domain and IP
+// lists could be loaded from external resources and could be highly dynamic
+// whereas geoip restrictions are usually static.
 type geoIP struct {
-	Path    string        `yaml:"path"`
-	Include []string      `yaml:"include"`
-	Exclude []string      `yaml:"exclude"`
-	Refresh time.Duration `yaml:"refresh_interval"`
-	mmdb    *maxminddb.Reader
-	logger  *slog.Logger
+	Path             string
+	AllowedCountries []string
+	BlockedCountries []string
+	Refresh          time.Duration
+	mmdb             *maxminddb.Reader
+	logger           *slog.Logger
 }
 
 func toLowerSlice(in []string) (out []string) {
@@ -32,7 +38,7 @@ func toLowerSlice(in []string) (out []string) {
 	return
 }
 
-// getCountry returns the country code for the given IP address.
+// getCountry returns the country code for the given IP address in ISO format
 func (g geoIP) getCountry(ipAddr string) (string, error) {
 	ip := net.ParseIP(ipAddr)
 	var record struct {
@@ -98,6 +104,16 @@ func (g *geoIP) initializeGeoIP() error {
 
 // checkGeoIPSkip checks an IP address against the exclude and include lists and returns
 // true if the IP address should be allowed to pass through.
+// the logic is as follows:
+// 1. if mmdb is not loaded or not available, it's fail-open (allow by default)
+// 2. if the IP can't be resolved to a country, it's rejected
+// 3. if the country is in the blocked list, it's rejected
+// 4. if the country is in the allowed list, it's allowed
+// note that the reject list is checked first and takes priority over the allow list
+// if the IP's country doesn't match any of the above, it's allowed if the blocked list is not empty
+// for example, if the blockedlist is [US] and the allowedlist is empty, a connection from
+// CA will be allowed. but if blockedlist is empty and allowedlist is [US], a connection from
+// CA will be rejected.
 func (g geoIP) checkGeoIPSkip(addr net.Addr) bool {
 	if g.mmdb == nil {
 		return true
@@ -109,21 +125,21 @@ func (g geoIP) checkGeoIPSkip(addr net.Addr) bool {
 	var country string
 	country, err := g.getCountry(ip)
 	country = strings.ToLower(country)
-	g.logger.Debug("incoming TCP connection", "ip", ip, "country", country)
+	g.logger.Debug("incoming tcp connection", "ip", ip, "country", country)
 
 	if err != nil {
-		g.logger.Info("Failed to get the geolocation of", "ip", ip, "country", country)
+		g.logger.Info("Failed to get the geolocation", "ip", ip, "country", country)
 		return false
 	}
-	if slices.Contains(g.Exclude, country) {
+	if slices.Contains(g.BlockedCountries, country) {
 		return false
 	}
-	if slices.Contains(g.Include, country) {
+	if slices.Contains(g.AllowedCountries, country) {
 		return true
 	}
 
 	// if exclusion is provided, the rest will be allowed
-	if len(g.Exclude) > 0 {
+	if len(g.BlockedCountries) > 0 {
 		return true
 	}
 
@@ -144,17 +160,17 @@ func (g geoIP) Decide(c *ConnInfo) error {
 func (g geoIP) Name() string {
 	return "geoip"
 }
-func (g *geoIP) Config(logger *slog.Logger, c *koanf.Koanf) error {
+func (g *geoIP) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
 	g.logger = logger
 	g.Path = c.String("path")
-	g.Include = toLowerSlice(c.Strings("include"))
-	g.Exclude = toLowerSlice(c.Strings("exclude"))
+	g.AllowedCountries = toLowerSlice(c.Strings("include"))
+	g.BlockedCountries = toLowerSlice(c.Strings("exclude"))
 	g.Refresh = c.Duration("refresh_interval")
 	go g.initializeGeoIP()
 	return nil
 }
 
-// Register the geoIP ACL
+// make the geoIP available at import time
 func init() {
-	tmpACLs.register(&geoIP{})
+	availableACLs = append(availableACLs, &geoIP{})
 }

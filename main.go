@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -218,11 +217,25 @@ func main() {
 	}
 	flags := cmd.Flags()
 	config := flags.StringP("config", "c", "", "path to YAML configuration file")
+	defaults := flags.String("defaultconfig", "", "write the default config yaml file to path")
 	if err := cmd.Execute(); err != nil {
-		log.Error("failed to execute command", err)
+		log.Error("failed to execute command", "error", err)
 		return
 	}
 	if flags.Changed("help") {
+		return
+	}
+	if *defaults != "" {
+		f, err := os.OpenFile(*defaults, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			log.Error("failed to open file", "error", err)
+			return
+		}
+		defer f.Close()
+		if _, err := f.Write(defaultConfig); err != nil {
+			log.Error("failed to write file", "error", err)
+			return
+		}
 		return
 	}
 
@@ -322,9 +335,9 @@ func main() {
 	// generate self-signed certificate if not provided
 	if c.TLSCert == "" && c.TLSKey == "" {
 		_, _, err := GenerateSelfSignedCertKey(c.PublicIPv4, nil, nil, os.TempDir())
-		log.Info("Certificate was not provided, using a self signed cert")
+		log.Info("certificate was not provided, using a self signed cert")
 		if err != nil {
-			log.Error("Error while generating self-signed cert: ", err)
+			log.Error("error while generating self-signed cert: ", err)
 		}
 		c.TLSCert = filepath.Join(os.TempDir(), c.PublicIPv4+".crt")
 		c.TLSKey = filepath.Join(os.TempDir(), c.PublicIPv4+".key")
@@ -375,7 +388,7 @@ func main() {
 			log.Error(err.Error())
 		}
 		if uri.Scheme != "socks5" {
-			log.Error("only SOCKS5 is supported", nil)
+			log.Error("only SOCKS5 is supported")
 			return
 		}
 
@@ -385,7 +398,7 @@ func main() {
 		socksAuth := proxy.Auth{User: u, Password: p}
 		c.dialer, err = proxy.SOCKS5("tcp", uri.Host, &socksAuth, proxy.Direct)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "can't connect to the proxy:", err)
+			log.Error("can't connect to proxy", "error", err.Error())
 			os.Exit(1)
 		}
 	} else {

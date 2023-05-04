@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# check distro and root 
+# check distro and root
 if [ -f /etc/debian_version ]; then
     echo "Debian/Ubuntu detected"
     if [ "$(id -u)" != "0" ]; then
@@ -25,7 +25,7 @@ if [ ! -d /run/systemd/system ]; then
     exit 1
 fi
 
-# prompt before removing stub resolver 
+# prompt before removing stub resolver
 echo "This script will remove the stub resolver from /etc/resolv.conf"
 echo "and replace it with 9.9.9.9"
 echo "Press Ctrl-C to abort or Enter to continue"
@@ -38,7 +38,7 @@ if ! command -v sed &> /dev/null; then
 fi
 
 # remove stub resolver
-sed -i 's/#DNS=/DNS=9.9.9.9/; s/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf 
+sed -i 's/#DNS=/DNS=9.9.9.9/; s/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
 systemctl restart systemd-resolved
 
 # check if stub resolver is removed by checking netstat for port 53 udp. try both ss and netstat
@@ -121,7 +121,7 @@ if [ "$dnsOverTLS" = "y" ] || [ "$dnsOverQUIC" = "y" ]; then
     if [ -z "$certPath" ] || [ -z "$keyPath" ]; then
         echo "WARNING: Using self-signed certificates"
     else
-        /opt/sniproxy/yq -i '.general.tls_certificate = "$certPath", .general.tls_key = '"$keyPath" $configPath
+        /opt/sniproxy/yq -i '.general.tls_cert = '"$certPath"', .general.tls_key = '"$keyPath" $configPath
     fi
 fi
 

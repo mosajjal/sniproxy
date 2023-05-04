@@ -163,8 +163,8 @@ func (g geoIP) Name() string {
 func (g *geoIP) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
 	g.logger = logger
 	g.Path = c.String("path")
-	g.AllowedCountries = toLowerSlice(c.Strings("include"))
-	g.BlockedCountries = toLowerSlice(c.Strings("exclude"))
+	g.AllowedCountries = toLowerSlice(c.Strings("allowed"))
+	g.BlockedCountries = toLowerSlice(c.Strings("blocked"))
 	g.Refresh = c.Duration("refresh_interval")
 	go g.initializeGeoIP()
 	return nil

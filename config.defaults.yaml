@@ -38,12 +38,23 @@ general:
 
 acl:
   # Enable geoip filtering
+  #
+  # the logic is as follows:
+  # 1. if mmdb is not loaded or not available, it's fail-open (allow by default)
+  # 2. if the IP can't be resolved to a country, it's rejected
+  # 3. if the country is in the blocked list, it's rejected
+  # 4. if the country is in the allowed list, it's allowed
+  # note that the reject list is checked first and takes priority over the allow list
+  # if the IP's country doesn't match any of the above, it's allowed if the blocked list is not empty
+  # for example, if the blockedlist is [US] and the allowedlist is empty, a connection from
+  # CA will be allowed. but if blockedlist is empty and allowedlist is [US], a connection from
+  # CA will be rejected.
   geoip:
     enabled: false
-    # Exclude countries to be allowed to connect. example: US,CA
-    exclude:
-    # Include countries to be allowed to connect. example: US,CA
-    include:
+    # strictly blocked countries
+    blocked:
+    # allowed countries 
+    allowed:
     # Path to the MMDB file. eg: /tmp/Country.mmdb, https://raw.githubusercontent.com/Loyalsoldier/geoip/release/Country.mmdb
     path:
     # Interval to re-fetch the MMDB file

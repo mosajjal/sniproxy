@@ -34,24 +34,23 @@ import (
 )
 
 type runConfig struct {
-	BindIP           string `yaml:"bind_ip"`
 	PublicIPv4       string `yaml:"public_ipv4"`
 	PublicIPv6       string `yaml:"public_ipv6"`
 	UpstreamDNS      string `yaml:"upstream_dns"`
 	UpstreamSOCKS5   string `yaml:"upstream_socks5"`
-	BindDNSOverTCP   bool   `yaml:"bind_dns_over_tcp"`
-	BindDNSOverTLS   bool   `yaml:"bind_dns_over_tls"`
-	BindDNSOverQuic  bool   `yaml:"bind_dns_over_quic"`
+	BindDNSOverUDP   string `yaml:"bind_dns_over_udp"`
+	BindDNSOverTCP   string `yaml:"bind_dns_over_tcp"`
+	BindDNSOverTLS   string `yaml:"bind_dns_over_tls"`
+	BindDNSOverQuic  string `yaml:"bind_dns_over_quic"`
 	TLSCert          string `yaml:"tls_cert"`
 	TLSKey           string `yaml:"tls_key"`
 	ReverseProxy     string `yaml:"reverse_proxy"`
 	ReverseProxyCert string `yaml:"reverse_proxy_cert"`
 	ReverseProxyKey  string `yaml:"reverse_proxy_key"`
-	HTTPPort         uint   `yaml:"http_port"`
-	HTTPSPort        uint   `yaml:"https_port"`
-	DNSPort          uint   `yaml:"dns_port"`
+	BindHTTP         string `yaml:"bind_http"`
+	BindHTTPS        string `yaml:"bind_https"`
 	Interface        string `yaml:"interface"`
-	Prometheus       string `yaml:"prometheus"`
+	BindPrometheus   string `yaml:"bind_prometheus"`
 
 	acl *acl.ACL
 
@@ -254,17 +253,16 @@ func main() {
 	// verify and load config
 	generalConfig := k.Cut("general")
 
-	c.BindIP = generalConfig.String("bind_ip")
 	c.UpstreamDNS = generalConfig.String("upstream_dns")
 	c.UpstreamSOCKS5 = generalConfig.String("upstream_socks5")
-	c.BindDNSOverTCP = generalConfig.Bool("bind_dns_over_tcp")
-	c.BindDNSOverTLS = generalConfig.Bool("bind_dns_over_tls")
-	c.BindDNSOverQuic = generalConfig.Bool("bind_dns_over_quic")
+	c.BindDNSOverUDP = generalConfig.String("bind_dns_over_udp")
+	c.BindDNSOverTCP = generalConfig.String("bind_dns_over_tcp")
+	c.BindDNSOverTLS = generalConfig.String("bind_dns_over_tls")
+	c.BindDNSOverQuic = generalConfig.String("bind_dns_over_quic")
 	c.TLSCert = generalConfig.String("tls_cert")
 	c.TLSKey = generalConfig.String("tls_key")
-	c.DNSPort = uint(generalConfig.Int("dns_port"))
-	c.HTTPPort = uint(generalConfig.Int("http_port"))
-	c.HTTPSPort = uint(generalConfig.Int("https_port"))
+	c.BindHTTP = generalConfig.String("bind_http")
+	c.BindHTTPS = generalConfig.String("bind_https")
 	c.Interface = generalConfig.String("interface")
 	c.PublicIPv4 = generalConfig.String("public_ipv4")
 	if c.PublicIPv4 == "" {
@@ -277,7 +275,7 @@ func main() {
 	c.ReverseProxy = generalConfig.String("reverse_proxy")
 	c.ReverseProxyCert = generalConfig.String("reverse_proxy_cert")
 	c.ReverseProxyKey = generalConfig.String("reverse_proxy_key")
-	c.Prometheus = generalConfig.String("prometheus")
+	c.BindPrometheus = generalConfig.String("prometheus")
 
 	aclConfig := k.Cut("acl")
 	c.acl = new(acl.ACL)
@@ -291,15 +289,15 @@ func main() {
 	c.recievedHTTPS = metrics.GetOrRegisterCounter("https.requests.recieved", metrics.DefaultRegistry)
 	c.proxiedHTTPS = metrics.GetOrRegisterCounter("https.requests.proxied", metrics.DefaultRegistry)
 
-	if c.Prometheus != "" {
+	if c.BindPrometheus != "" {
 		p := prometheusmetrics.NewPrometheusProvider(metrics.DefaultRegistry, "sniproxy", c.PublicIPv4, prometheus.DefaultRegisterer, 1*time.Second)
 		go p.UpdatePrometheusMetrics()
 		go func() {
 			http.Handle("/metrics", promhttp.Handler())
 			log.Info("starting metrics server",
-				"address", c.Prometheus,
+				"address", c.BindPrometheus,
 			)
-			if err := http.ListenAndServe(c.Prometheus, promhttp.Handler()); err != nil {
+			if err := http.ListenAndServe(c.BindPrometheus, promhttp.Handler()); err != nil {
 				log.Error(err.Error())
 			}
 		}()
@@ -398,8 +396,8 @@ func main() {
 	if err != nil {
 		log.Error(err.Error())
 	}
-	c.dnsClient = DNSClient{C: tmp}
-	defer c.dnsClient.C.Close()
+	c.dnsClient = DNSClient{tmp}
+	defer c.dnsClient.Close()
 	go runHTTP()
 	go runHTTPS()
 	go runDNS()

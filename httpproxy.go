@@ -45,7 +45,7 @@ func runHTTP() {
 	handler.HandleFunc("/", handle80)
 
 	s := &http.Server{
-		Addr:           fmt.Sprintf(":%d", c.HTTPPort),
+		Addr:           c.BindHTTP,
 		Handler:        handler,
 		ReadTimeout:    10 * time.Second,
 		WriteTimeout:   10 * time.Second,

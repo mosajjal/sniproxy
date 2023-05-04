@@ -17,8 +17,9 @@ import (
 	"github.com/miekg/dns"
 )
 
+// DNSClient is a wrapper around the DNS client
 type DNSClient struct {
-	C dnsclient.Client
+	dnsclient.Client
 }
 
 var dnsLock sync.RWMutex
@@ -35,16 +36,16 @@ func (dnsc *DNSClient) performExternalAQuery(fqdn string, QType uint16) ([]dns.R
 	msg.SetQuestion(fqdn, QType)
 	msg.SetEdns0(1232, true)
 	dnsLock.Lock()
-	if dnsc.C == nil {
-		return nil, 0, fmt.Errorf("DNS client is not initialised")
+	if dnsc == nil {
+		return nil, 0, fmt.Errorf("dns client is not initialised")
 	}
-	res, trr, err := dnsc.C.Query(context.Background(), &msg)
+	res, trr, err := dnsc.Query(context.Background(), &msg)
 	if err != nil {
 		if err.Error() == "EOF" {
 			dnslog.Info("reconnecting DNS...")
 			// dnsc.C.Close()
 			// dnsc.C, err = dnsclient.New(c.UpstreamDNS, true)
-			err = c.dnsClient.C.Reconnect()
+			err = c.dnsClient.Reconnect()
 		}
 	}
 	dnsLock.Unlock()
@@ -136,34 +137,35 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 func runDNS() {
 	dns.HandleFunc(".", handleDNS)
 	// start DNS UDP serverUdp
-	go func() {
-		serverUDP := &dns.Server{Addr: fmt.Sprintf(":%d", c.DNSPort), Net: "udp"}
-		dnslog.Info("Started UDP DNS", "host", "0.0.0.0", "port", c.DNSPort)
-		err := serverUDP.ListenAndServe()
-		defer serverUDP.Shutdown()
-		if err != nil {
-			dnslog.Error("Error starting UDP DNS server", "details", err)
-			dnslog.Info(fmt.Sprintf("Failed to start server: %s\nYou can run the following command to pinpoint which process is listening on port %d\nsudo ss -pltun -at '( dport = :%d or sport = :%d )'", err.Error(), c.DNSPort, c.DNSPort, c.DNSPort))
-			panic(2)
-		}
-	}()
-
-	// start DNS UDP serverTcp
-	if c.BindDNSOverTCP {
+	if c.BindDNSOverUDP != "" {
 		go func() {
-			serverTCP := &dns.Server{Addr: fmt.Sprintf(":%d", c.DNSPort), Net: "tcp"}
-			dnslog.Info("Started TCP DNS", "host", "0.0.0.0", "port", c.DNSPort)
+			serverUDP := &dns.Server{Addr: c.BindDNSOverUDP, Net: "udp"}
+			dnslog.Info("started udp dns", "bind", c.BindDNSOverUDP)
+			err := serverUDP.ListenAndServe()
+			defer serverUDP.Shutdown()
+			if err != nil {
+				dnslog.Error("error starting udp dns server", "details", err)
+				dnslog.Info(fmt.Sprintf("failed to start server: %s\nyou can run the following command to pinpoint which process is listening on your bind\nsudo ss -pltun", c.BindDNSOverUDP))
+				panic(2)
+			}
+		}()
+	}
+	// start DNS UDP serverTcp
+	if c.BindDNSOverTCP != "" {
+		go func() {
+			serverTCP := &dns.Server{Addr: c.BindDNSOverTCP, Net: "tcp"}
+			dnslog.Info("started tcp dns", "bind", c.BindDNSOverTCP)
 			err := serverTCP.ListenAndServe()
 			defer serverTCP.Shutdown()
 			if err != nil {
-				dnslog.Error("Failed to start server", err)
-				dnslog.Info(fmt.Sprintf("You can run the following command to pinpoint which process is listening on port %d\nsudo ss -pltun -at '( dport = :%d or sport = :%d )'", c.DNSPort, c.DNSPort, c.DNSPort))
+				dnslog.Error("failed to start server", err)
+				dnslog.Info(fmt.Sprintf("failed to start server: %s\nyou can run the following command to pinpoint which process is listening on your bind\nsudo ss -pltun", c.BindDNSOverTCP))
 			}
 		}()
 	}
 
 	// start DNS UDP serverTls
-	if c.BindDNSOverTLS {
+	if c.BindDNSOverTLS != "" {
 		go func() {
 			crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
 			if err != nil {
@@ -174,8 +176,8 @@ func runDNS() {
 			tlsConfig := &tls.Config{}
 			tlsConfig.Certificates = []tls.Certificate{crt}
 
-			serverTLS := &dns.Server{Addr: ":853", Net: "tcp-tls", TLSConfig: tlsConfig}
-			dnslog.Info("Started DoT DNS", "host", "0.0.0.0", "port", 853)
+			serverTLS := &dns.Server{Addr: c.BindDNSOverTLS, Net: "tcp-tls", TLSConfig: tlsConfig}
+			dnslog.Info("started dot dns", "bind", c.BindDNSOverTLS)
 			err = serverTLS.ListenAndServe()
 			defer serverTLS.Shutdown()
 			if err != nil {
@@ -184,7 +186,7 @@ func runDNS() {
 		}()
 	}
 
-	if c.BindDNSOverQuic {
+	if c.BindDNSOverQuic != "" {
 
 		crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
 		if err != nil {
@@ -194,13 +196,15 @@ func runDNS() {
 		tlsConfig.Certificates = []tls.Certificate{crt}
 
 		// Create the QUIC listener
-		doqServer, err := doqserver.New(":8853", crt, "127.0.0.1:53", true)
+		// BUG: DoQ always uses localhost:53 as upstream. if Dns Over UDP is disabled or
+		// using a different port, DoQ won't work properly.
+		doqServer, err := doqserver.New(c.BindDNSOverQuic, crt, "127.0.0.1:53", true)
 		if err != nil {
 			dnslog.Error(err.Error())
 		}
 
 		// Accept QUIC connections
-		dnslog.Info("Starting QUIC listener on :8853")
+		dnslog.Info("starting quic listener", "bind", c.BindDNSOverQuic)
 		go doqServer.Listen()
 
 	}

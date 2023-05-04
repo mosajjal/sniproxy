@@ -61,29 +61,30 @@ fi
 # create a folder under /opt for sniproxy
 mkdir -p /opt/sniproxy
 
+execCommand="/opt/sniproxy/sniproxy"
+configPath="/opt/sniproxy/sniproxy.yaml"
+yqPath="/opt/sniproxy/yq"
+
 # download sniproxy
-wget -O /opt/sniproxy/sniproxy http://bin.n0p.me/sniproxy
+wget -O $execCommand http://bin.n0p.me/sniproxy
 # make it executable
-chmod +x /opt/sniproxy/sniproxy
+chmod +x $execCommand
 
 # download yq
-wget -O /opt/sniproxy/yq http://bin.n0p.me/yq
+wget -O $yqPath http://bin.n0p.me/yq
 # make it executable
-chmod +x /opt/sniproxy/yq
+chmod +x $yqPath
 
-# download the default config
-wget -O /opt/sniproxy/sniproxy.yaml https://raw.githubusercontent.com/mosajjal/sniproxy/v2/config.defaults.yaml
+# generate the default config
+$execCommand --defaultconfig $configPath
 
 # ask which domains to proxy
 echo "sniproxy can proxy all HTTPS traffic or only specific domains, if you have a domain list URL, enter it below, otherwise press Enter to proxy all HTTPS traffic"
 read domainlist
 
-execCommand="/opt/sniproxy/sniproxy"
-configPath="/opt/sniproxy/sniproxy.yaml"
-
 # if domainslist is not empty, there should be a --domainListPath argument added to sniproxy execute command
 if [ -n "$domainlist" ]; then
-    /opt/sniproxy/yq -i '.acl.domain.enabled = true, .acl.domain.path = '"$domainlist" $configPath
+    $yqPath -i '.acl.domain.enabled = true, .acl.domain.path = '"$domainlist" $configPath
 fi
 
 # ask if DNS over TCP should be enabled
@@ -91,7 +92,7 @@ echo "Do you want to enable DNS over TCP? (y/n)"
 read dnsOverTCP
 # if yes, add --bindDnsOverTcp argument to sniproxy execute command
 if [ "$dnsOverTCP" = "y" ]; then
-    /opt/sniproxy/yq -i '.general.bind_dns_over_tcp = true' $configPath
+    $yqPath -i '.general.bind_dns_over_tcp = true' $configPath
 fi
 
 # ask if DNS over TLS should be enabled
@@ -99,7 +100,7 @@ echo "Do you want to enable DNS over TLS? (y/n)"
 read dnsOverTLS
 # if yes, add --bindDnsOverTls argument to sniproxy execute command
 if [ "$dnsOverTLS" = "y" ]; then
-    /opt/sniproxy/yq -i '.general.bind_dns_over_tls = true' $configPath
+    $yqPath -i '.general.bind_dns_over_tls = true' $configPath
 fi
 
 # ask for DNS over QUIC
@@ -107,7 +108,7 @@ echo "Do you want to enable DNS over QUIC? (y/n)"
 read dnsOverQUIC
 # if yes, add --bindDnsOverQuic argument to sniproxy execute command
 if [ "$dnsOverQUIC" = "y" ]; then
-    /opt/sniproxy/yq -i '.general.bind_dns_over_quic = true' $configPath
+    $yqPath -i '.general.bind_dns_over_quic = true' $configPath
 fi
 
 # if any of DNS over TLS or DNS over QUIC is enabled, ask for the certificate path and key path
@@ -121,7 +122,7 @@ if [ "$dnsOverTLS" = "y" ] || [ "$dnsOverQUIC" = "y" ]; then
     if [ -z "$certPath" ] || [ -z "$keyPath" ]; then
         echo "WARNING: Using self-signed certificates"
     else
-        /opt/sniproxy/yq -i '.general.tls_cert = '"$certPath"', .general.tls_key = '"$keyPath" $configPath
+        $yqPath -i '.general.tls_cert = '"$certPath"', .general.tls_key = '"$keyPath" $configPath
     fi
 fi
 

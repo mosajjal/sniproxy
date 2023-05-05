@@ -16,7 +16,7 @@ general:
   # Path to the certificate key for DoH, DoT and DoQ. eg: /tmp/mycert.key
   tls_key:
   # HTTP Port to listen on. Should remain 80 in most cases
-  bind_http : "0.0.0.0:80"
+  bind_http: "0.0.0.0:80"
   # HTTPS Port to listen on. Should remain 443 in most cases
   bind_https: "0.0.0.0:443"
   # Enable prometheus endpoint on IP:PORT. example: 127.0.0.1:8080. Always exposes /metrics and only supports HTTP

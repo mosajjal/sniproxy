@@ -71,6 +71,11 @@ type runConfig struct {
 
 var c runConfig
 
+var (
+	version string = "v2"
+	commit  string = "none"
+)
+
 //go:embed config.defaults.yaml
 var defaultConfig []byte
 
@@ -263,6 +268,8 @@ func main() {
 		logLevel.Set(slog.LevelInfo)
 	}
 
+	log.Info("starting sniproxy", "version", version, "commit", commit)
+
 	// verify and load config
 	generalConfig := k.Cut("general")
 
@@ -337,7 +344,7 @@ func main() {
 		_, _, err := GenerateSelfSignedCertKey(c.PublicIPv4, nil, nil, os.TempDir())
 		log.Info("certificate was not provided, using a self signed cert")
 		if err != nil {
-			log.Error("error while generating self-signed cert: ", err)
+			log.Error("error while generating self-signed cert: ", "error", err)
 		}
 		c.TLSCert = filepath.Join(os.TempDir(), c.PublicIPv4+".crt")
 		c.TLSKey = filepath.Join(os.TempDir(), c.PublicIPv4+".key")

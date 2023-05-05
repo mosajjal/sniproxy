@@ -7,9 +7,9 @@ general:
   bind_dns_over_udp: "0.0.0.0:53"
   # enable DNS over TCP. empty disables it. example: "127.0.0.1:53"
   bind_dns_over_tcp:
-  # enable DNS over TLS. empty disables it. example: "127.0.0.1:53"
+  # enable DNS over TLS. empty disables it. example: "127.0.0.1:853"
   bind_dns_over_tls:
-  # enable DNS over QUIC. empty disables it. example: "127.0.0.1:53"
+  # enable DNS over QUIC. empty disables it. example: "127.0.0.1:8853"
   bind_dns_over_quic:
   # Path to the certificate for DoH, DoT and DoQ. eg: /tmp/mycert.pem
   tls_cert:

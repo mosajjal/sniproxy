@@ -3,15 +3,15 @@ package acl
 import (
 	"bufio"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
-	"testing"
 	"time"
 
 	"github.com/golang-collections/collections/tst"
 	"github.com/knadh/koanf"
-	slog "golang.org/x/exp/slog"
+	"golang.org/x/exp/slog"
 )
 
 // domain ACL makes a decision on a connection based on the domain name derived
@@ -23,6 +23,7 @@ type domain struct {
 	routeSuffixes   *tst.TernarySearchTree
 	routeFQDNs      map[string]uint8
 	logger          *slog.Logger
+	priority        uint
 }
 
 const (
@@ -64,28 +65,6 @@ func reverse(s string) string {
 		r[i], r[j] = r[j], r[i]
 	}
 	return string(r)
-}
-
-// TestReverse tests the reverse function
-func TestReverse(t *testing.T) {
-	tests := []struct {
-		name string
-		s    string
-		want string
-	}{
-		{name: "test1", s: "abc", want: "cba"},
-		{name: "test2", s: "a", want: "a"},
-		{name: "test3", s: "aab", want: "baa"},
-		{name: "test4", s: "zzZ", want: "Zzz"},
-		{name: "test5", s: "ab2", want: "2ba"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := reverse(tt.s); got != tt.want {
-				t.Errorf("reverse() = %v, want %v", got, tt.want)
-			}
-		})
-	}
 }
 
 // LoadDomainsCsv loads a domains Csv file/URL. returns 3 parameters:
@@ -162,7 +141,7 @@ func (d *domain) LoadDomainsCSVWorker() {
 func (d domain) Decide(c *ConnInfo) error {
 	// true means skip
 	if c.Decision == Reject {
-		c.DstIP = nil
+		c.DstIP = net.TCPAddr{IP: net.IPv4zero, Port: 0}
 		return nil
 	}
 	if d.inDomainList(c.Domain) {
@@ -175,12 +154,17 @@ func (d domain) Decide(c *ConnInfo) error {
 func (d domain) Name() string {
 	return "domain"
 }
+func (d domain) Priority() uint {
+	return d.priority
+}
+
 func (d *domain) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
 	d.logger = logger
 	d.routePrefixes = tst.New()
 	d.routeSuffixes = tst.New()
 	d.routeFQDNs = make(map[string]uint8)
 	d.Path = c.String("path")
+	d.priority = uint(c.Int("priority"))
 	d.RefreshInterval = c.Duration("refresh_interval")
 	go d.LoadDomainsCSVWorker()
 	return nil

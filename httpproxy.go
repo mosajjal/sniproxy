@@ -1,16 +1,14 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/mosajjal/sniproxy/acl"
-	slog "golang.org/x/exp/slog"
+	"golang.org/x/exp/slog"
 )
 
 var httplog = slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue("http")}}))
@@ -67,7 +65,7 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 		SrcIP:  addr,
 		Domain: r.Host,
 	}
-	c.acl.MakeDecision(&connInfo)
+	acl.MakeDecision(&connInfo, c.acl)
 	if connInfo.Decision == acl.Reject || connInfo.Decision == acl.ProxyIP || err != nil {
 		httplog.Info("rejected request", "ip", r.RemoteAddr)
 		http.Error(w, "Could not reach origin server", 403)
@@ -110,26 +108,6 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 	// 	httplog.Warn("a client requested connection to " + r.Host + ", but it's not allowed as per configuration.. sending 403")
 	// 	return
 	// }
-
-	// if host is the reverse proxy, this request needs to be handled by the upstream address
-	if r.Host == c.reverseProxySNI {
-		reverseProxyURI, err := url.Parse(c.reverseProxyAddr)
-		if err != nil {
-			httplog.Error("failed to parse reverseproxy url", err)
-
-		}
-		// TODO: maybe this won't work and I need to be more specific
-		// rr.URL = reverseProxyURI
-		hostPort := ""
-		if reverseProxyURI.Port() != "80" {
-			hostPort = fmt.Sprintf("%s:%s", reverseProxyURI.Host, reverseProxyURI.Port())
-		} else {
-			hostPort = reverseProxyURI.Host
-		}
-		rr.URL.Host = reverseProxyURI.Host
-		// add the port to the host header
-		rr.Header.Set("Host", hostPort)
-	}
 
 	transport := http.Transport{
 		Dial: c.dialer.Dial,

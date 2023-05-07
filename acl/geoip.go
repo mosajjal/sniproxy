@@ -11,7 +11,7 @@ import (
 	"github.com/knadh/koanf"
 	"github.com/oschwald/maxminddb-golang"
 	"golang.org/x/exp/slices"
-	slog "golang.org/x/exp/slog"
+	"golang.org/x/exp/slog"
 )
 
 // geoIP is an ACL that checks the geolocation of incoming connections and
@@ -29,6 +29,7 @@ type geoIP struct {
 	Refresh          time.Duration
 	mmdb             *maxminddb.Reader
 	logger           *slog.Logger
+	priority         uint
 }
 
 func toLowerSlice(in []string) (out []string) {
@@ -160,9 +161,14 @@ func (g geoIP) Decide(c *ConnInfo) error {
 func (g geoIP) Name() string {
 	return "geoip"
 }
+func (g geoIP) Priority() uint {
+	return g.priority
+}
+
 func (g *geoIP) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
 	g.logger = logger
 	g.Path = c.String("path")
+	g.priority = uint(c.Int("priority"))
 	g.AllowedCountries = toLowerSlice(c.Strings("allowed"))
 	g.BlockedCountries = toLowerSlice(c.Strings("blocked"))
 	g.Refresh = c.Duration("refresh_interval")

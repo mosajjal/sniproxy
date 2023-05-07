@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -24,41 +25,36 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/miekg/dns"
-	slog "golang.org/x/exp/slog"
+	"golang.org/x/exp/slog"
 	"golang.org/x/net/proxy"
 
 	_ "embed"
 
 	"github.com/mosajjal/sniproxy/acl"
+	doh "github.com/mosajjal/sniproxy/dohserver"
 )
 
 type runConfig struct {
-	PublicIPv4       string `yaml:"public_ipv4"`
-	PublicIPv6       string `yaml:"public_ipv6"`
-	UpstreamDNS      string `yaml:"upstream_dns"`
-	UpstreamSOCKS5   string `yaml:"upstream_socks5"`
-	BindDNSOverUDP   string `yaml:"bind_dns_over_udp"`
-	BindDNSOverTCP   string `yaml:"bind_dns_over_tcp"`
-	BindDNSOverTLS   string `yaml:"bind_dns_over_tls"`
-	BindDNSOverQuic  string `yaml:"bind_dns_over_quic"`
-	TLSCert          string `yaml:"tls_cert"`
-	TLSKey           string `yaml:"tls_key"`
-	ReverseProxy     string `yaml:"reverse_proxy"`
-	ReverseProxyCert string `yaml:"reverse_proxy_cert"`
-	ReverseProxyKey  string `yaml:"reverse_proxy_key"`
-	BindHTTP         string `yaml:"bind_http"`
-	BindHTTPS        string `yaml:"bind_https"`
-	Interface        string `yaml:"interface"`
-	BindPrometheus   string `yaml:"bind_prometheus"`
+	PublicIPv4      string `yaml:"public_ipv4"`
+	PublicIPv6      string `yaml:"public_ipv6"`
+	UpstreamDNS     string `yaml:"upstream_dns"`
+	UpstreamSOCKS5  string `yaml:"upstream_socks5"`
+	BindDNSOverUDP  string `yaml:"bind_dns_over_udp"`
+	BindDNSOverTCP  string `yaml:"bind_dns_over_tcp"`
+	BindDNSOverTLS  string `yaml:"bind_dns_over_tls"`
+	BindDNSOverQuic string `yaml:"bind_dns_over_quic"`
+	TLSCert         string `yaml:"tls_cert"`
+	TLSKey          string `yaml:"tls_key"`
+	BindHTTP        string `yaml:"bind_http"`
+	BindHTTPS       string `yaml:"bind_https"`
+	Interface       string `yaml:"interface"`
+	BindPrometheus  string `yaml:"bind_prometheus"`
 
-	acl *acl.ACL
+	acl []*acl.ACL
 
 	dnsClient  DNSClient
 	dialer     proxy.Dialer
 	sourceAddr net.IP
-
-	reverseProxySNI  string
-	reverseProxyAddr string
 
 	// metrics
 	recievedHTTP  metrics.Counter
@@ -223,11 +219,16 @@ func main() {
 	flags := cmd.Flags()
 	config := flags.StringP("config", "c", "", "path to YAML configuration file")
 	defaults := flags.String("defaultconfig", "", "write the default config yaml file to path")
+	_ = flags.BoolP("version", "v", false, "show version info and exit")
 	if err := cmd.Execute(); err != nil {
 		log.Error("failed to execute command", "error", err)
 		return
 	}
 	if flags.Changed("help") {
+		return
+	}
+	if flags.Changed("version") {
+		fmt.Printf("sniproxy version %s, commit %s\n", version, commit)
 		return
 	}
 	if *defaults != "" {
@@ -292,14 +293,15 @@ func main() {
 	if c.PublicIPv6 == "" {
 		c.PublicIPv6, _ = getPublicIPv6()
 	}
-	c.ReverseProxy = generalConfig.String("reverse_proxy")
-	c.ReverseProxyCert = generalConfig.String("reverse_proxy_cert")
-	c.ReverseProxyKey = generalConfig.String("reverse_proxy_key")
 	c.BindPrometheus = generalConfig.String("prometheus")
 
 	aclConfig := k.Cut("acl")
-	c.acl = new(acl.ACL)
-	c.acl.StartACLs(log, aclConfig)
+	var err error
+	c.acl, err = acl.StartACLs(log, aclConfig)
+	if err != nil {
+		log.Error("failed to start ACLs", "error", err)
+		return
+	}
 
 	// set up metrics
 	c.recievedDNS = metrics.GetOrRegisterCounter("dns.requests.recieved", metrics.DefaultRegistry)
@@ -341,22 +343,13 @@ func main() {
 
 	// generate self-signed certificate if not provided
 	if c.TLSCert == "" && c.TLSKey == "" {
-		_, _, err := GenerateSelfSignedCertKey(c.PublicIPv4, nil, nil, os.TempDir())
-		log.Info("certificate was not provided, using a self signed cert")
+		_, _, err := doh.GenerateSelfSignedCertKey(c.PublicIPv4, nil, nil, os.TempDir())
+		log.Info("certificate was not provided, generating a self signed cert in temp directory")
 		if err != nil {
 			log.Error("error while generating self-signed cert: ", "error", err)
 		}
 		c.TLSCert = filepath.Join(os.TempDir(), c.PublicIPv4+".crt")
 		c.TLSKey = filepath.Join(os.TempDir(), c.PublicIPv4+".key")
-	}
-
-	// parse reverseproxy and split it into url and sni
-	if c.ReverseProxy != "" {
-		log.Info("enablibng a reverse proxy")
-
-		tmp := strings.Split(c.ReverseProxy, "::")
-		c.reverseProxySNI, c.reverseProxyAddr = tmp[0], tmp[1]
-		go runReverse()
 	}
 
 	// throw an error if geoip include or exclude is present, but geoippath is not

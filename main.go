@@ -68,8 +68,8 @@ type runConfig struct {
 var c runConfig
 
 var (
-	version string = "v2"
-	commit  string = "none"
+	version string = "v2-UNKNOWN"
+	commit  string = "NOT PROVIDED"
 )
 
 //go:embed config.defaults.yaml
@@ -218,7 +218,7 @@ func main() {
 	}
 	flags := cmd.Flags()
 	config := flags.StringP("config", "c", "", "path to YAML configuration file")
-	defaults := flags.String("defaultconfig", "", "write the default config yaml file to path")
+	_ = flags.Bool("defaultconfig", false, "write the default config yaml file to path")
 	_ = flags.BoolP("version", "v", false, "show version info and exit")
 	if err := cmd.Execute(); err != nil {
 		log.Error("failed to execute command", "error", err)
@@ -231,17 +231,8 @@ func main() {
 		fmt.Printf("sniproxy version %s, commit %s\n", version, commit)
 		return
 	}
-	if *defaults != "" {
-		f, err := os.OpenFile(*defaults, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		if err != nil {
-			log.Error("failed to open file", "error", err)
-			return
-		}
-		defer f.Close()
-		if _, err := f.Write(defaultConfig); err != nil {
-			log.Error("failed to write file", "error", err)
-			return
-		}
+	if flags.Changed("defaultconfig") {
+		fmt.Fprintf(os.Stdout, string(defaultConfig))
 		return
 	}
 

@@ -5,7 +5,9 @@ go 1.20
 require (
 	github.com/deathowl/go-metrics-prometheus v0.0.0-20221009205350-f2a1482ba35b
 	github.com/golang-collections/collections v0.0.0-20130729185459-604e922904d3
+	github.com/gorilla/handlers v1.5.1
 	github.com/knadh/koanf v1.5.0
+	github.com/m13253/dns-over-https/v2 v2.3.3
 	github.com/miekg/dns v1.1.54
 	github.com/mosajjal/dnsclient v0.1.1-0.20230206011533-99fa18d84393
 	github.com/mosajjal/doqd v0.0.0-20230201205103-19d9a309dc6a
@@ -16,17 +18,20 @@ require (
 	github.com/yl2chen/cidranger v1.0.2
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
 	golang.org/x/net v0.9.0
+	inet.af/tcpproxy v0.0.0-20221017015627-91f861402626
 )
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
+	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/pprof v0.0.0-20230429030804-905365eefe3e // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/infobloxopen/go-trees v0.0.0-20221216143356-66ceba885ebc // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
@@ -45,7 +50,8 @@ require (
 	github.com/stretchr/testify v1.8.1 // indirect
 	golang.org/x/crypto v0.8.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
-	golang.org/x/sys v0.7.0 // indirect
+	golang.org/x/sys v0.8.0 // indirect
+	golang.org/x/text v0.9.0 // indirect
 	golang.org/x/tools v0.8.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

@@ -12,7 +12,7 @@ import (
 	"github.com/mosajjal/dnsclient"
 	doqserver "github.com/mosajjal/doqd/pkg/server"
 	"github.com/mosajjal/sniproxy/acl"
-	slog "golang.org/x/exp/slog"
+	"golang.org/x/exp/slog"
 
 	"github.com/miekg/dns"
 )
@@ -55,7 +55,7 @@ func (dnsc *DNSClient) performExternalAQuery(fqdn string, QType uint16) ([]dns.R
 func processQuestion(q dns.Question, decision acl.Decision) ([]dns.RR, error) {
 	c.recievedDNS.Inc(1)
 	// Check to see if we should respond with our own IP
-	if decision == acl.ProxyIP || decision == acl.Accept {
+	if decision == acl.ProxyIP || decision == acl.Accept || decision == acl.Override {
 		// Return the public IP.
 		c.proxiedDNS.Inc(1)
 		dnslog.Info("returned sniproxy address for domain", "fqdn", q.Name)
@@ -122,7 +122,7 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 			SrcIP:  w.RemoteAddr(),
 			Domain: q.Name,
 		}
-		c.acl.MakeDecision(&connInfo)
+		acl.MakeDecision(&connInfo, c.acl)
 		answers, err := processQuestion(q, connInfo.Decision)
 		if err != nil {
 			dnslog.Error(err.Error())

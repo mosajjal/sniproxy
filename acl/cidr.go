@@ -10,7 +10,7 @@ import (
 
 	"github.com/knadh/koanf"
 	"github.com/yl2chen/cidranger"
-	slog "golang.org/x/exp/slog"
+	"golang.org/x/exp/slog"
 )
 
 // CIDR acl allows sniproxy to use a list of CIDR to allow or reject connections
@@ -23,6 +23,7 @@ type cidr struct {
 	AllowRanger     cidranger.Ranger
 	RejectRanger    cidranger.Ranger
 	logger          *slog.Logger
+	priority        uint
 }
 
 func (d *cidr) LoadCIDRCSV(path string) error {
@@ -121,11 +122,15 @@ func (d cidr) Decide(c *ConnInfo) error {
 func (d cidr) Name() string {
 	return "cidr"
 }
+func (d cidr) Priority() uint {
+	return d.priority
+}
 
 // Config function is what starts the ACL
 func (d *cidr) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
 	d.logger = logger
 	d.Path = c.String("path")
+	d.priority = uint(c.Int("priority"))
 	d.RefreshInterval = c.Duration("refresh_interval")
 	go d.loadCIDRCSVWorker()
 	return nil

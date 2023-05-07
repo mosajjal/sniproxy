@@ -27,6 +27,6 @@ jobs:
         goos: ${{ matrix.goos }}
         goarch: ${{ matrix.goarch }}
         goversion: 1.20.3
-        ldflags: "-s -w -X main.version=$(git describe --tags) -X main.commit=$(git rev-parse HEAD)"
+        ldflags: "-s -w -X main.version=${{ github.event.release.tag_name }} -X main.commit=${{ github.sha }}"
         build_flags: -v
 

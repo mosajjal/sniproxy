@@ -198,7 +198,7 @@ func runDNS() {
 		// Create the QUIC listener
 		// BUG: DoQ always uses localhost:53 as upstream. if Dns Over UDP is disabled or
 		// using a different port, DoQ won't work properly.
-		doqServer, err := doqserver.New(c.BindDNSOverQuic, crt, "127.0.0.1:53", true)
+		doqServer, err := doqserver.New(c.BindDNSOverQuic, crt, c.BindDNSOverUDP, true)
 		if err != nil {
 			dnslog.Error(err.Error())
 		}

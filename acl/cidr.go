@@ -2,6 +2,7 @@ package acl
 
 import (
 	"bufio"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -128,6 +129,7 @@ func (d cidr) Priority() uint {
 
 // Config function is what starts the ACL
 func (d *cidr) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
+	c = c.Cut(fmt.Sprintf("acl.%s", d.Name()))
 	d.logger = logger
 	d.Path = c.String("path")
 	d.priority = uint(c.Int("priority"))

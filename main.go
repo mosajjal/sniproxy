@@ -286,9 +286,8 @@ func main() {
 	}
 	c.BindPrometheus = generalConfig.String("prometheus")
 
-	aclConfig := k.Cut("acl")
 	var err error
-	c.acl, err = acl.StartACLs(log, aclConfig)
+	c.acl, err = acl.StartACLs(log, k)
 	if err != nil {
 		log.Error("failed to start ACLs", "error", err)
 		return

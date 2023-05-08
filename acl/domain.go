@@ -159,6 +159,7 @@ func (d domain) Priority() uint {
 }
 
 func (d *domain) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
+	c = c.Cut(fmt.Sprintf("acl.%s", d.Name()))
 	d.logger = logger
 	d.routePrefixes = tst.New()
 	d.routeSuffixes = tst.New()

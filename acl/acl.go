@@ -1,6 +1,7 @@
 package acl
 
 import (
+	"fmt"
 	"net"
 	"sort"
 
@@ -50,15 +51,17 @@ type ACL interface {
 // StartACLs starts all the ACLs that have been configured and registered
 func StartACLs(log *slog.Logger, k *koanf.Koanf) ([]*ACL, error) {
 	var a []*ACL
+	aclK := k.Cut("acl")
 	for _, acl := range availableACLs {
 		// cut each konaf based on the name of the ACL
-		cutK := k.Cut((acl).Name())
 		// only configure if the "enabled" key is set to true
-		if !cutK.Bool("enabled") {
+		if !aclK.Bool(fmt.Sprintf("%s.enabled", (acl).Name())) {
 			continue
 		}
 		l := slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue((acl).Name())}}))
-		if err := (acl).ConfigAndStart(l, cutK); err != nil {
+		// we pass the full config to each ACL so that they can cut it themselves. it's needed for some ACLs that need
+		// to read the config of other ACLs or the global config
+		if err := (acl).ConfigAndStart(l, k); err != nil {
 			return a, err
 		}
 		a = append(a, &acl)

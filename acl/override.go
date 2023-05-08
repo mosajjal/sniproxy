@@ -82,6 +82,8 @@ func (o override) Priority() uint {
 }
 
 func (o *override) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
+	DNSBind := c.String("general.bind_dns_over_udp")
+	c = c.Cut(fmt.Sprintf("acl.%s", o.Name()))
 	tmpRules := c.StringMap("rules")
 	o.logger = logger
 	o.priority = uint(c.Int("priority"))
@@ -107,6 +109,7 @@ func (o *override) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
 		}
 		dohConfig.Cert = o.tlsCert
 		dohConfig.Key = o.tlsKey
+		dohConfig.Upstream = []string{DNSBind}
 		dohS, err := dohserver.NewServer(dohConfig)
 		if err != nil {
 			return err

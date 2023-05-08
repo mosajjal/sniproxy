@@ -1,6 +1,7 @@
 package acl
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -166,6 +167,7 @@ func (g geoIP) Priority() uint {
 }
 
 func (g *geoIP) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
+	c = c.Cut(fmt.Sprintf("acl.%s", g.Name()))
 	g.logger = logger
 	g.Path = c.String("path")
 	g.priority = uint(c.Int("priority"))

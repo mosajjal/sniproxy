@@ -46,7 +46,7 @@ func handle443(conn net.Conn) error {
 	rPort := 443
 	var rAddr net.IP
 	if connInfo.Decision == acl.Override {
-		httpslog.Info("overriding destination IP", "ip", rAddr.String(), "newip", connInfo.DstIP.String())
+		httpslog.Debug("overriding destination IP", "ip", rAddr.String(), "newip", connInfo.DstIP.String())
 		rAddr = connInfo.DstIP.IP
 		rPort = connInfo.DstIP.Port
 	} else {

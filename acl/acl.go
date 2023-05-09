@@ -35,11 +35,11 @@ type ConnInfo struct {
 	Decision
 }
 
-type ByPriority []*ACL
+type ByPriority []ACL
 
 func (a ByPriority) Len() int           { return len(a) }
 func (a ByPriority) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a ByPriority) Less(i, j int) bool { return (*a[i]).Priority() < (*a[j]).Priority() }
+func (a ByPriority) Less(i, j int) bool { return a[i].Priority() < a[j].Priority() }
 
 type ACL interface {
 	Decide(*ConnInfo) error
@@ -49,8 +49,8 @@ type ACL interface {
 }
 
 // StartACLs starts all the ACLs that have been configured and registered
-func StartACLs(log *slog.Logger, k *koanf.Koanf) ([]*ACL, error) {
-	var a []*ACL
+func StartACLs(log *slog.Logger, k *koanf.Koanf) ([]ACL, error) {
+	var a []ACL
 	aclK := k.Cut("acl")
 	for _, acl := range availableACLs {
 		// cut each konaf based on the name of the ACL
@@ -61,19 +61,23 @@ func StartACLs(log *slog.Logger, k *koanf.Koanf) ([]*ACL, error) {
 		l := slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue((acl).Name())}}))
 		// we pass the full config to each ACL so that they can cut it themselves. it's needed for some ACLs that need
 		// to read the config of other ACLs or the global config
-		if err := (acl).ConfigAndStart(l, k); err != nil {
+		if err := acl.ConfigAndStart(l, k); err != nil {
+			log.Warn("failed to start ACL", "name", (acl).Name(), "err", err)
 			return a, err
 		}
-		a = append(a, &acl)
+		a = append(a, acl)
+		log.Info("started ACL", "name", (acl).Name())
+		fmt.Printf("%+v\n", a)
+
 	}
 	return a, nil
 }
 
 // MakeDecision loops through all the ACLs and makes a decision for the connection
-func MakeDecision(c *ConnInfo, a []*ACL) error {
+func MakeDecision(c *ConnInfo, a []ACL) error {
 	sort.Sort(ByPriority(a))
 	for _, acl := range a {
-		if err := (*acl).Decide(c); err != nil {
+		if err := acl.Decide(c); err != nil {
 			return err
 		}
 	}

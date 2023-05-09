@@ -139,14 +139,16 @@ func (d *domain) LoadDomainsCSVWorker() {
 
 // implement domain as an ACL interface
 func (d domain) Decide(c *ConnInfo) error {
-	// true means skip
+
 	if c.Decision == Reject {
 		c.DstIP = net.TCPAddr{IP: net.IPv4zero, Port: 0}
 		return nil
 	}
 	if d.inDomainList(c.Domain) {
+		d.logger.Debug("domain not going through proxy", "domain", c.Domain)
 		c.Decision = OriginIP
 	} else {
+		d.logger.Debug("domain going through proxy", "domain", c.Domain)
 		c.Decision = ProxyIP
 	}
 	return nil

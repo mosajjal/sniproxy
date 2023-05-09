@@ -109,7 +109,7 @@ func (o *override) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
 		}
 		dohConfig.Cert = o.tlsCert
 		dohConfig.Key = o.tlsKey
-		dohConfig.Upstream = []string{DNSBind}
+		dohConfig.Upstream = []string{fmt.Sprintf("udp:%s", DNSBind)}
 		dohS, err := dohserver.NewServer(dohConfig)
 		if err != nil {
 			return err

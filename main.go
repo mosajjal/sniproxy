@@ -50,7 +50,7 @@ type runConfig struct {
 	Interface       string `yaml:"interface"`
 	BindPrometheus  string `yaml:"bind_prometheus"`
 
-	acl []*acl.ACL
+	acl []acl.ACL
 
 	dnsClient  DNSClient
 	dialer     proxy.Dialer

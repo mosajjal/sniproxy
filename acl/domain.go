@@ -22,7 +22,7 @@ type domain struct {
 	routePrefixes   *tst.TernarySearchTree
 	routeSuffixes   *tst.TernarySearchTree
 	routeFQDNs      map[string]uint8
-	logger          zerolog.Logger
+	logger          *zerolog.Logger
 	priority        uint
 }
 
@@ -160,7 +160,7 @@ func (d domain) Priority() uint {
 	return d.priority
 }
 
-func (d *domain) ConfigAndStart(logger zerolog.Logger, c *koanf.Koanf) error {
+func (d *domain) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	c = c.Cut(fmt.Sprintf("acl.%s", d.Name()))
 	d.logger = logger
 	d.routePrefixes = tst.New()

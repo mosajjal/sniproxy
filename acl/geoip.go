@@ -29,7 +29,7 @@ type geoIP struct {
 	BlockedCountries []string
 	Refresh          time.Duration
 	mmdb             *maxminddb.Reader
-	logger           zerolog.Logger
+	logger           *zerolog.Logger
 	priority         uint
 }
 
@@ -166,7 +166,7 @@ func (g geoIP) Priority() uint {
 	return g.priority
 }
 
-func (g *geoIP) ConfigAndStart(logger zerolog.Logger, c *koanf.Koanf) error {
+func (g *geoIP) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	c = c.Cut(fmt.Sprintf("acl.%s", g.Name()))
 	g.logger = logger
 	g.Path = c.String("path")

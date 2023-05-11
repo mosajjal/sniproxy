@@ -28,6 +28,8 @@ general:
   # Public IPv6 of the server, reply address of DNS AAAA queries
   public_ipv6:
   # log level for the application. choices: debug, info, warn, error
+  # by default, the logs are colored so they are not suited for logging to a file.
+  # in order to disable colors, set NO_COLOR=true in the environment variables
   log_level: info
 
 acl:

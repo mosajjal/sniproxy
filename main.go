@@ -25,10 +25,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 
+	_ "embed"
+	stdlog "log"
+
 	"github.com/miekg/dns"
 	"golang.org/x/net/proxy"
-
-	_ "embed"
 
 	"github.com/mosajjal/sniproxy/acl"
 	doh "github.com/mosajjal/sniproxy/dohserver"
@@ -75,7 +76,9 @@ var (
 //go:embed config.defaults.yaml
 var defaultConfig []byte
 
-var logger = zerolog.New(os.Stderr).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{Out: os.Stderr})
+// disable colors in logging if NO_COLOR is set
+var nocolorLog = strings.ToLower(os.Getenv("NO_COLOR")) == "true"
+var logger = zerolog.New(os.Stderr).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339, NoColor: nocolorLog})
 
 func pipe(conn1 net.Conn, conn2 net.Conn) {
 	chan1 := getChannel(conn1)
@@ -197,7 +200,6 @@ func getPublicIPv6() (string, error) {
 		}
 
 		if externalIP != "" {
-
 			return cleanIPv6(externalIP), nil
 		}
 		logger.Error().Msg("Could not automatically find the public IPv6 address. Please specify it in the configuration.")
@@ -251,11 +253,16 @@ func main() {
 	// verify and load config
 	generalConfig := k.Cut("general")
 
+	stdlog.SetFlags(0)
+	stdlog.SetOutput(logger)
+
 	switch l := generalConfig.String("log_level"); l {
 	case "debug":
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+		logger = logger.With().Caller().Logger()
 	case "info":
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+		logger = logger.With().Caller().Logger()
 	case "warn":
 		zerolog.SetGlobalLevel(zerolog.WarnLevel)
 	case "error":
@@ -286,7 +293,7 @@ func main() {
 	c.BindPrometheus = generalConfig.String("prometheus")
 
 	var err error
-	c.acl, err = acl.StartACLs(logger, k)
+	c.acl, err = acl.StartACLs(&logger, k)
 	if err != nil {
 		logger.Error().Msgf("failed to start ACLs: %s", err)
 		return
@@ -314,10 +321,6 @@ func main() {
 		}()
 	}
 
-	// if c.DomainListPath == "" {
-	// 	log.Warn().Msg("Domain list (--domainListPath) is not specified, routing ALL domains through the SNI proxy")
-	// 	c.AllDomains = true
-	// }
 	if c.PublicIPv4 != "" {
 		logger.Info().Str("public_ip", c.PublicIPv4).Msg("server info")
 	} else {
@@ -340,20 +343,6 @@ func main() {
 		c.TLSCert = filepath.Join(os.TempDir(), c.PublicIPv4+".crt")
 		c.TLSKey = filepath.Join(os.TempDir(), c.PublicIPv4+".key")
 	}
-
-	// throw an error if geoip include or exclude is present, but geoippath is not
-	// if c.GeoIPPath == "" && (len(c.GeoIPInclude)+len(c.GeoIPExclude) >= 1) {
-	// log.Error().Msg("GeoIP include or exclude is present, but GeoIPPath is not")
-	// }
-	//
-	// // load mmdb if provided
-	// if c.GeoIPPath != "" {
-	// 	go initializeGeoIP(c.GeoIPPath)
-	// 	c.GeoIPExclude = toLowerSlice(c.GeoIPExclude)
-	// 	log.Info().Msg("GeoIP", "exclude", c.GeoIPExclude)
-	// 	c.GeoIPInclude = toLowerSlice(c.GeoIPInclude)
-	// 	log.Info().Msg("GeoIP", "include", c.GeoIPInclude)
-	// }
 
 	// Finds source addr for outbound connections if interface is not empty
 	if c.Interface != "" {
@@ -399,18 +388,9 @@ func main() {
 	}
 	c.dnsClient = DNSClient{tmp}
 	defer c.dnsClient.Close()
-	go runHTTP()
-	go runHTTPS()
-	go runDNS()
+	go runHTTP(logger)
+	go runHTTPS(logger)
+	go runDNS(logger)
 
-	// fetch domain list and refresh them periodically
-	// if !c.AllDomains {
-	// 	c.routePrefixes, c.routeSuffixes, c.routeFQDNs, _ = LoadDomainsCsv(c.DomainListPath)
-	// 	for range time.NewTicker(c.DomainListRefreshInterval.Duration).C {
-	// 		c.routePrefixes, c.routeSuffixes, c.routeFQDNs, _ = LoadDomainsCsv(c.DomainListPath)
-	// 	}
-	// } else {
-	// 	select {}
-	// }
 	select {}
 }

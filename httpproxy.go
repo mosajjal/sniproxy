@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mosajjal/sniproxy/acl"
+	"github.com/rs/zerolog"
 )
 
 var httplog = logger.With().Str("service", "http").Logger()
@@ -36,7 +37,8 @@ var passthruResponseHeaderKeys = [...]string{
 	"Vary",
 }
 
-func runHTTP() {
+func runHTTP(l zerolog.Logger) {
+	httplog = l.With().Str("service", "http").Logger()
 	handler := http.DefaultServeMux
 
 	handler.HandleFunc("/", handle80)

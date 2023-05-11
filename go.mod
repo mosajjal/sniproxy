@@ -10,7 +10,7 @@ require (
 	github.com/m13253/dns-over-https/v2 v2.3.3
 	github.com/miekg/dns v1.1.54
 	github.com/mosajjal/dnsclient v0.1.1-0.20230206011533-99fa18d84393
-	github.com/mosajjal/doqd v0.0.0-20230201205103-19d9a309dc6a
+	github.com/mosajjal/doqd v0.0.0-20230511083851-8f2810faeb07
 	github.com/oschwald/maxminddb-golang v1.10.0
 	github.com/prometheus/client_golang v1.15.1
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
@@ -41,6 +41,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/onsi/ginkgo/v2 v2.9.4 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_model v0.4.0 // indirect
 	github.com/prometheus/common v0.43.0 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect

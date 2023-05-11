@@ -23,7 +23,7 @@ type cidr struct {
 	RefreshInterval time.Duration `yaml:"refresh_interval"`
 	AllowRanger     cidranger.Ranger
 	RejectRanger    cidranger.Ranger
-	logger          zerolog.Logger
+	logger          *zerolog.Logger
 	priority        uint
 }
 
@@ -128,7 +128,7 @@ func (d cidr) Priority() uint {
 }
 
 // Config function is what starts the ACL
-func (d *cidr) ConfigAndStart(logger zerolog.Logger, c *koanf.Koanf) error {
+func (d *cidr) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	c = c.Cut(fmt.Sprintf("acl.%s", d.Name()))
 	d.logger = logger
 	d.Path = c.String("path")

@@ -12,6 +12,7 @@ import (
 	"github.com/mosajjal/dnsclient"
 	doqserver "github.com/mosajjal/doqd/pkg/server"
 	"github.com/mosajjal/sniproxy/acl"
+	"github.com/rs/zerolog"
 
 	"github.com/miekg/dns"
 )
@@ -124,7 +125,6 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 		acl.MakeDecision(&connInfo, c.acl)
 		answers, err := processQuestion(q, connInfo.Decision)
 		if err != nil {
-			dnslog.Error().Msg(err.Error())
 			continue
 		}
 		m.Answer = append(m.Answer, answers...)
@@ -133,7 +133,8 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	w.WriteMsg(m)
 }
 
-func runDNS() {
+func runDNS(l zerolog.Logger) {
+	dnslog = l.With().Str("service", "dns").Logger()
 	dns.HandleFunc(".", handleDNS)
 	// start DNS UDP serverUdp
 	if c.BindDNSOverUDP != "" {
@@ -195,7 +196,14 @@ func runDNS() {
 		tlsConfig.Certificates = []tls.Certificate{crt}
 
 		// Create the QUIC listener
-		doqServer, err := doqserver.New(c.BindDNSOverQuic, crt, c.BindDNSOverUDP, true)
+		doqConf := doqserver.Config{
+			ListenAddr: c.BindDNSOverQuic,
+			Cert:       crt,
+			Upstream:   c.BindDNSOverUDP,
+			TLSCompat:  true,
+			Debug:      true, // TODO: only enable this if log level is debug
+		}
+		doqServer, err := doqserver.New(doqConf)
 		if err != nil {
 			dnslog.Error().Msg(err.Error())
 		}

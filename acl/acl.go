@@ -45,11 +45,11 @@ type ACL interface {
 	Decide(*ConnInfo) error
 	Name() string
 	Priority() uint
-	ConfigAndStart(zerolog.Logger, *koanf.Koanf) error
+	ConfigAndStart(*zerolog.Logger, *koanf.Koanf) error
 }
 
 // StartACLs starts all the ACLs that have been configured and registered
-func StartACLs(log zerolog.Logger, k *koanf.Koanf) ([]ACL, error) {
+func StartACLs(log *zerolog.Logger, k *koanf.Koanf) ([]ACL, error) {
 	var a []ACL
 	aclK := k.Cut("acl")
 	for _, acl := range availableACLs {
@@ -61,7 +61,7 @@ func StartACLs(log zerolog.Logger, k *koanf.Koanf) ([]ACL, error) {
 		var l = log.With().Str("acl", (acl).Name()).Logger()
 		// we pass the full config to each ACL so that they can cut it themselves. it's needed for some ACLs that need
 		// to read the config of other ACLs or the global config
-		if err := acl.ConfigAndStart(l, k); err != nil {
+		if err := acl.ConfigAndStart(&l, k); err != nil {
 			log.Warn().Msgf("failed to start ACL %s with error %s", (acl).Name(), err)
 			return a, err
 		}

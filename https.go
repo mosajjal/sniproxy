@@ -5,6 +5,7 @@ import (
 	"net"
 
 	"github.com/mosajjal/sniproxy/acl"
+	"github.com/rs/zerolog"
 	"golang.org/x/net/proxy"
 )
 
@@ -91,8 +92,8 @@ func handle443(conn net.Conn) error {
 	return nil
 }
 
-func runHTTPS() {
-
+func runHTTPS(log zerolog.Logger) {
+	httpslog = log.With().Str("service", "https").Logger()
 	l, err := net.Listen("tcp", c.BindHTTPS)
 	if err != nil {
 		httpslog.Err(err)

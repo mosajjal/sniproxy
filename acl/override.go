@@ -25,7 +25,7 @@ type override struct {
 	tcpproxyport int
 	tlsCert      string
 	tlsKey       string
-	logger       zerolog.Logger
+	logger       *zerolog.Logger
 }
 
 // GetFreePort returns a random open port
@@ -81,7 +81,7 @@ func (o override) Priority() uint {
 	return o.priority
 }
 
-func (o *override) ConfigAndStart(logger zerolog.Logger, c *koanf.Koanf) error {
+func (o *override) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	DNSBind := c.String("general.bind_dns_over_udp")
 	c = c.Cut(fmt.Sprintf("acl.%s", o.Name()))
 	tmpRules := c.StringMap("rules")

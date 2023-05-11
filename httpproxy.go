@@ -8,10 +8,9 @@ import (
 	"time"
 
 	"github.com/mosajjal/sniproxy/acl"
-	"golang.org/x/exp/slog"
 )
 
-var httplog = slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue("http")}}))
+var httplog = logger.With().Str("service", "http").Logger()
 
 var passthruRequestHeaderKeys = [...]string{
 	"Accept",
@@ -51,7 +50,7 @@ func runHTTP() {
 	}
 
 	if err := s.ListenAndServe(); err != nil {
-		httplog.Error(err.Error())
+		httplog.Error().Msg(err.Error())
 		panic(-1)
 	}
 }
@@ -67,18 +66,18 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 	}
 	acl.MakeDecision(&connInfo, c.acl)
 	if connInfo.Decision == acl.Reject || connInfo.Decision == acl.ProxyIP || err != nil {
-		httplog.Info("rejected request", "ip", r.RemoteAddr)
+		httplog.Info().Msgf("rejected request from ip: %s", r.RemoteAddr)
 		http.Error(w, "Could not reach origin server", 403)
 		return
 	}
 	// if the URL starts with the public IP, it needs to be skipped to avoid loops
 	if strings.HasPrefix(r.Host, c.PublicIPv4) {
-		httplog.Warn("someone is requesting HTTP to sniproxy itself, ignoring...")
+		httplog.Warn().Msg("someone is requesting HTTP to sniproxy itself, ignoring...")
 		http.Error(w, "Could not reach origin server", 404)
 		return
 	}
 
-	httplog.Info("REQ", "method", r.Method, "host", r.Host, "url", r.URL)
+	httplog.Info().Msgf("REQ method %s, host: %s, url: %s", r.Method, r.Host, r.URL)
 
 	// Construct filtered header to send to origin server
 	hh := http.Header{}
@@ -105,7 +104,7 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 	// check to see if this host is listed to be processed, otherwise RESET
 	// if !c.AllDomains && inDomainList(r.Host+".") {
 	// 	http.Error(w, "Could not reach origin server", 403)
-	// 	httplog.Warn("a client requested connection to " + r.Host + ", but it's not allowed as per configuration.. sending 403")
+	// 	httplog.Warn().Msg("a client requested connection to " + r.Host + ", but it's not allowed as per configuration.. sending 403")
 	// 	return
 	// }
 
@@ -117,13 +116,12 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 	resp, err := transport.RoundTrip(&rr)
 	if err != nil {
 		// TODO: Passthru more error information
-		http.Error(w, "Could not reach origin server", 500)
-		httplog.Error(err.Error())
+		httplog.Error().Msg(err.Error())
 		return
 	}
 	defer resp.Body.Close()
 
-	httplog.Info("http response", "status_code", resp.Status)
+	httplog.Info().Msgf("http response with status_code %s", resp.Status)
 
 	// Transfer filtered header from origin server -> client
 	respH := w.Header()

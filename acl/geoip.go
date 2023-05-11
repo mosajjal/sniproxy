@@ -11,8 +11,8 @@ import (
 
 	"github.com/knadh/koanf"
 	"github.com/oschwald/maxminddb-golang"
+	"github.com/rs/zerolog"
 	"golang.org/x/exp/slices"
-	"golang.org/x/exp/slog"
 )
 
 // geoIP is an ACL that checks the geolocation of incoming connections and
@@ -29,7 +29,7 @@ type geoIP struct {
 	BlockedCountries []string
 	Refresh          time.Duration
 	mmdb             *maxminddb.Reader
-	logger           *slog.Logger
+	logger           zerolog.Logger
 	priority         uint
 }
 
@@ -59,15 +59,15 @@ func (g geoIP) getCountry(ipAddr string) (string, error) {
 // initializeGeoIP loads the geolocation database from the specified g.Path.
 func (g *geoIP) initializeGeoIP() error {
 
-	g.logger.Info("Loading the domain from file/url")
+	g.logger.Info().Msg("Loading the domain from file/url")
 	var scanner []byte
 	if strings.HasPrefix(g.Path, "http://") || strings.HasPrefix(g.Path, "https://") {
-		g.logger.Info("domain list is a URL, trying to fetch")
+		g.logger.Info().Msg("domain list is a URL, trying to fetch")
 		resp, err := http.Get(g.Path)
 		if err != nil {
 			return err
 		}
-		g.logger.Info("(re)fetching", "Path", g.Path)
+		g.logger.Info().Msgf("(re)fetching %s", g.Path)
 		defer resp.Body.Close()
 		scanner, err = io.ReadAll(resp.Body)
 		if err != nil {
@@ -79,13 +79,13 @@ func (g *geoIP) initializeGeoIP() error {
 		if err != nil {
 			return err
 		}
-		g.logger.Info("(re)loading File: ", g.Path)
+		g.logger.Info().Msgf("(re)loading File: %s", g.Path)
 		defer file.Close()
 		n, err := file.Read(scanner)
 		if err != nil {
 			return err
 		}
-		g.logger.Info("geolocation database loaded", n)
+		g.logger.Info().Msgf("geolocation database with %d bytes loaded", n)
 
 	}
 	var err error
@@ -93,13 +93,13 @@ func (g *geoIP) initializeGeoIP() error {
 		//g.logger.Warn("%d bytes read, %s", len(scanner), err)
 		return err
 	}
-	g.logger.Info("Loaded MMDB")
+	g.logger.Info().Msg("Loaded MMDB")
 	for range time.NewTicker(g.Refresh).C {
 		if g.mmdb, err = maxminddb.FromBytes(scanner); err != nil {
 			//g.logger.Warn("%d bytes read, %s", len(scanner), err)
 			return err
 		}
-		g.logger.Info("Loaded MMDB %v", g.mmdb)
+		g.logger.Info().Msgf("Loaded MMDB %v", g.mmdb)
 	}
 	return nil
 }
@@ -127,10 +127,10 @@ func (g geoIP) checkGeoIPSkip(addr net.Addr) bool {
 	var country string
 	country, err := g.getCountry(ip)
 	country = strings.ToLower(country)
-	g.logger.Debug("incoming tcp connection", "ip", ip, "country", country)
+	g.logger.Debug().Msgf("incoming tcp connection from ip %s and country %s", ip, country)
 
 	if err != nil {
-		g.logger.Info("Failed to get the geolocation", "ip", ip, "country", country)
+		g.logger.Info().Msgf("Failed to get the geolocation of ip %s", ip)
 		return false
 	}
 	if slices.Contains(g.BlockedCountries, country) {
@@ -153,10 +153,10 @@ func (g geoIP) checkGeoIPSkip(addr net.Addr) bool {
 func (g geoIP) Decide(c *ConnInfo) error {
 	// in checkGeoIPSkip, false is reject
 	if !g.checkGeoIPSkip(c.SrcIP) {
-		g.logger.Info("Rejecting connection from", "ip", c.SrcIP)
+		g.logger.Info().Msgf("rejecting connection from ip %s", c.SrcIP)
 		c.Decision = Reject
 	}
-	g.logger.Debug("GeoIP decision", "ip", c.SrcIP, "decision", c.Decision)
+	g.logger.Debug().Msgf("GeoIP decision for ip %s is %#v", c.SrcIP, c.Decision)
 	return nil
 }
 func (g geoIP) Name() string {
@@ -166,7 +166,7 @@ func (g geoIP) Priority() uint {
 	return g.priority
 }
 
-func (g *geoIP) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
+func (g *geoIP) ConfigAndStart(logger zerolog.Logger, c *koanf.Koanf) error {
 	c = c.Cut(fmt.Sprintf("acl.%s", g.Name()))
 	g.logger = logger
 	g.Path = c.String("path")

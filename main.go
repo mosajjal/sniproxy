@@ -15,6 +15,7 @@ import (
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/rawbytes"
+	"github.com/rs/zerolog"
 
 	prometheusmetrics "github.com/deathowl/go-metrics-prometheus"
 	"github.com/mosajjal/dnsclient"
@@ -25,7 +26,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/miekg/dns"
-	"golang.org/x/exp/slog"
 	"golang.org/x/net/proxy"
 
 	_ "embed"
@@ -75,8 +75,7 @@ var (
 //go:embed config.defaults.yaml
 var defaultConfig []byte
 
-var logLevel = new(slog.LevelVar)
-var log = slog.New(slog.HandlerOptions{Level: logLevel}.NewTextHandler(os.Stderr))
+var logger = zerolog.New(os.Stderr).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
 func pipe(conn1 net.Conn, conn2 net.Conn) {
 	chan1 := getChannel(conn1)
@@ -153,7 +152,7 @@ func getPublicIPv4() (string, error) {
 
 			return externalIP, nil
 		}
-		log.Error("Could not automatically find the public IPv4 address. Please specify it in the configuration.", nil)
+		logger.Error().Msg("Could not automatically find the public IPv4 address. Please specify it in the configuration.")
 
 	}
 	return "", nil
@@ -201,7 +200,7 @@ func getPublicIPv6() (string, error) {
 
 			return cleanIPv6(externalIP), nil
 		}
-		log.Error("Could not automatically find the public IPv6 address. Please specify it in the configuration.", nil)
+		logger.Error().Msg("Could not automatically find the public IPv6 address. Please specify it in the configuration.")
 
 	}
 	return "", nil
@@ -221,7 +220,7 @@ func main() {
 	_ = flags.Bool("defaultconfig", false, "write the default config yaml file to path")
 	_ = flags.BoolP("version", "v", false, "show version info and exit")
 	if err := cmd.Execute(); err != nil {
-		log.Error("failed to execute command", "error", err)
+		logger.Error().Msgf("failed to execute command: %s", err)
 		return
 	}
 	if flags.Changed("help") {
@@ -247,23 +246,23 @@ func main() {
 		}
 	}
 
-	switch k.String("log_level") {
-	case "debug":
-		logLevel.Set(slog.LevelDebug)
-	case "info":
-		logLevel.Set(slog.LevelInfo)
-	case "warn":
-		logLevel.Set(slog.LevelWarn)
-	case "error":
-		logLevel.Set(slog.LevelError)
-	default:
-		logLevel.Set(slog.LevelInfo)
-	}
-
-	log.Info("starting sniproxy", "version", version, "commit", commit)
+	logger.Info().Msgf("starting sniproxy. version %s, commit %s", version, commit)
 
 	// verify and load config
 	generalConfig := k.Cut("general")
+
+	switch l := generalConfig.String("log_level"); l {
+	case "debug":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case "info":
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	case "warn":
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case "error":
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
 
 	c.UpstreamDNS = generalConfig.String("upstream_dns")
 	c.UpstreamSOCKS5 = generalConfig.String("upstream_socks5")
@@ -287,9 +286,9 @@ func main() {
 	c.BindPrometheus = generalConfig.String("prometheus")
 
 	var err error
-	c.acl, err = acl.StartACLs(log, k)
+	c.acl, err = acl.StartACLs(logger, k)
 	if err != nil {
-		log.Error("failed to start ACLs", "error", err)
+		logger.Error().Msgf("failed to start ACLs: %s", err)
 		return
 	}
 
@@ -306,37 +305,37 @@ func main() {
 		go p.UpdatePrometheusMetrics()
 		go func() {
 			http.Handle("/metrics", promhttp.Handler())
-			log.Info("starting metrics server",
+			logger.Info().Str(
 				"address", c.BindPrometheus,
-			)
+			).Msg("starting metrics server")
 			if err := http.ListenAndServe(c.BindPrometheus, promhttp.Handler()); err != nil {
-				log.Error(err.Error())
+				logger.Error().Msgf("%s", err)
 			}
 		}()
 	}
 
 	// if c.DomainListPath == "" {
-	// 	log.Warn("Domain list (--domainListPath) is not specified, routing ALL domains through the SNI proxy")
+	// 	log.Warn().Msg("Domain list (--domainListPath) is not specified, routing ALL domains through the SNI proxy")
 	// 	c.AllDomains = true
 	// }
 	if c.PublicIPv4 != "" {
-		log.Info("server info", "public_ip", c.PublicIPv4)
+		logger.Info().Str("public_ip", c.PublicIPv4).Msg("server info")
 	} else {
-		log.Error("Could not automatically determine public IPv4. you should provide it manually using --publicIPv4")
+		logger.Error().Msg("Could not automatically determine public IPv4. you should provide it manually using --publicIPv4")
 	}
 
 	if c.PublicIPv6 != "" {
-		log.Info("server info", "public_ip", c.PublicIPv6)
+		logger.Info().Str("public_ip", c.PublicIPv6).Msg("server info")
 	} else {
-		log.Error("Could not automatically determine public IPv6. you should provide it manually using --publicIPv6")
+		logger.Error().Msg("Could not automatically determine public IPv6. you should provide it manually using --publicIPv6")
 	}
 
 	// generate self-signed certificate if not provided
 	if c.TLSCert == "" && c.TLSKey == "" {
 		_, _, err := doh.GenerateSelfSignedCertKey(c.PublicIPv4, nil, nil, os.TempDir())
-		log.Info("certificate was not provided, generating a self signed cert in temp directory")
+		logger.Info().Msg("certificate was not provided, generating a self signed cert in temp directory")
 		if err != nil {
-			log.Error("error while generating self-signed cert: ", "error", err)
+			logger.Error().Msgf("error while generating self-signed cert: %s", err)
 		}
 		c.TLSCert = filepath.Join(os.TempDir(), c.PublicIPv4+".crt")
 		c.TLSKey = filepath.Join(os.TempDir(), c.PublicIPv4+".key")
@@ -344,29 +343,28 @@ func main() {
 
 	// throw an error if geoip include or exclude is present, but geoippath is not
 	// if c.GeoIPPath == "" && (len(c.GeoIPInclude)+len(c.GeoIPExclude) >= 1) {
-	// 	log.Error("GeoIP include or exclude is present, but GeoIPPath is not")
+	// log.Error().Msg("GeoIP include or exclude is present, but GeoIPPath is not")
 	// }
 	//
 	// // load mmdb if provided
 	// if c.GeoIPPath != "" {
 	// 	go initializeGeoIP(c.GeoIPPath)
 	// 	c.GeoIPExclude = toLowerSlice(c.GeoIPExclude)
-	// 	log.Info("GeoIP", "exclude", c.GeoIPExclude)
+	// 	log.Info().Msg("GeoIP", "exclude", c.GeoIPExclude)
 	// 	c.GeoIPInclude = toLowerSlice(c.GeoIPInclude)
-	// 	log.Info("GeoIP", "include", c.GeoIPInclude)
+	// 	log.Info().Msg("GeoIP", "include", c.GeoIPInclude)
 	// }
 
 	// Finds source addr for outbound connections if interface is not empty
 	if c.Interface != "" {
-		log.Info("Using", "interface", c.Interface)
+		logger.Info().Msgf("Using interface %s", c.Interface)
 		ief, err := net.InterfaceByName(c.Interface)
 		if err != nil {
-			log.Error(err.Error())
+			logger.Err(err)
 		}
 		addrs, err := ief.Addrs()
 		if err != nil {
-			log.Error(err.Error())
-
+			logger.Err(err)
 		}
 		c.sourceAddr = net.ParseIP(addrs[0].String())
 
@@ -375,20 +373,20 @@ func main() {
 	if c.UpstreamSOCKS5 != "" {
 		uri, err := url.Parse(c.UpstreamSOCKS5)
 		if err != nil {
-			log.Error(err.Error())
+			logger.Err(err)
 		}
 		if uri.Scheme != "socks5" {
-			log.Error("only SOCKS5 is supported")
+			logger.Error().Msg("only SOCKS5 is supported")
 			return
 		}
 
-		log.Info("Using an upstream SOCKS5 proxy", "address", uri.Host)
+		logger.Info().Msgf("Using an upstream SOCKS5 proxy: %s", uri.Host)
 		u := uri.User.Username()
 		p, _ := uri.User.Password()
 		socksAuth := proxy.Auth{User: u, Password: p}
 		c.dialer, err = proxy.SOCKS5("tcp", uri.Host, &socksAuth, proxy.Direct)
 		if err != nil {
-			log.Error("can't connect to proxy", "error", err.Error())
+			logger.Error().Msgf("can't connect to proxy: %s", err.Error())
 			os.Exit(1)
 		}
 	} else {
@@ -397,7 +395,7 @@ func main() {
 
 	tmp, err := dnsclient.New(c.UpstreamDNS, true, c.UpstreamSOCKS5)
 	if err != nil {
-		log.Error(err.Error())
+		logger.Err(err)
 	}
 	c.dnsClient = DNSClient{tmp}
 	defer c.dnsClient.Close()

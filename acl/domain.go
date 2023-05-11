@@ -11,7 +11,7 @@ import (
 
 	"github.com/golang-collections/collections/tst"
 	"github.com/knadh/koanf"
-	"golang.org/x/exp/slog"
+	"github.com/rs/zerolog"
 )
 
 // domain ACL makes a decision on a connection based on the domain name derived
@@ -22,7 +22,7 @@ type domain struct {
 	routePrefixes   *tst.TernarySearchTree
 	routeSuffixes   *tst.TernarySearchTree
 	routeFQDNs      map[string]uint8
-	logger          *slog.Logger
+	logger          zerolog.Logger
 	priority        uint
 }
 
@@ -72,10 +72,10 @@ func reverse(s string) string {
 // 2. a TST for all the suffixes (type 2)
 // 3. a hashtable for all the full match fqdn (type 3)
 func (d *domain) LoadDomainsCsv(Filename string) error {
-	d.logger.Info("Loading the domain from file/url")
+	d.logger.Info().Msg("Loading the domain from file/url")
 	var scanner *bufio.Scanner
 	if strings.HasPrefix(Filename, "http://") || strings.HasPrefix(Filename, "https://") {
-		d.logger.Info("domain list is a URL, trying to fetch")
+		d.logger.Info().Msg("domain list is a URL, trying to fetch")
 		client := http.Client{
 			CheckRedirect: func(r *http.Request, via []*http.Request) error {
 				r.URL.Opaque = r.URL.Path
@@ -84,10 +84,10 @@ func (d *domain) LoadDomainsCsv(Filename string) error {
 		}
 		resp, err := client.Get(Filename)
 		if err != nil {
-			d.logger.Error(err.Error())
+			d.logger.Err(err)
 			return err
 		}
-		d.logger.Info("(re)fetching URL", "url", Filename)
+		d.logger.Info().Msgf("(re)fetching URL: %s", Filename)
 		defer resp.Body.Close()
 		scanner = bufio.NewScanner(resp.Body)
 
@@ -96,7 +96,7 @@ func (d *domain) LoadDomainsCsv(Filename string) error {
 		if err != nil {
 			return err
 		}
-		d.logger.Info("(re)loading File", "file", Filename)
+		d.logger.Info().Msgf("(re)loading file: %s", Filename)
 		defer file.Close()
 		scanner = bufio.NewScanner(file)
 	}
@@ -105,7 +105,7 @@ func (d *domain) LoadDomainsCsv(Filename string) error {
 		// split the line by comma to understand thed.logger.c
 		fqdn := strings.Split(lowerCaseLine, ",")
 		if len(fqdn) != 2 {
-			d.logger.Info(lowerCaseLine + " is not a valid line, assuming FQDN")
+			d.logger.Info().Msg(lowerCaseLine + " is not a valid line, assuming FQDN")
 			fqdn = []string{lowerCaseLine, "fqdn"}
 		}
 		// add the fqdn to the hashtable with its type
@@ -121,11 +121,11 @@ func (d *domain) LoadDomainsCsv(Filename string) error {
 			d.routeFQDNs[fqdn[0]] = matchFQDN
 		default:
 			//d.logger.Warnf("%s is not a valid line, assuming fqdn", lowerCaseLine)
-			d.logger.Info(lowerCaseLine + " is not a valid line, assuming FQDN")
+			d.logger.Info().Msg(lowerCaseLine + " is not a valid line, assuming FQDN")
 			d.routeFQDNs[fqdn[0]] = matchFQDN
 		}
 	}
-	d.logger.Info(fmt.Sprintf("%s loaded with %d prefix, %d suffix and %d fqdn", Filename, d.routePrefixes.Len(), d.routeSuffixes.Len(), len(d.routeFQDNs)-d.routePrefixes.Len()-d.routeSuffixes.Len()))
+	d.logger.Info().Msgf("%s loaded with %d prefix, %d suffix and %d fqdn", Filename, d.routePrefixes.Len(), d.routeSuffixes.Len(), len(d.routeFQDNs)-d.routePrefixes.Len()-d.routeSuffixes.Len())
 
 	return nil
 }
@@ -145,10 +145,10 @@ func (d domain) Decide(c *ConnInfo) error {
 		return nil
 	}
 	if d.inDomainList(c.Domain) {
-		d.logger.Debug("domain not going through proxy", "domain", c.Domain)
+		d.logger.Debug().Msgf("domain not going through proxy: %s", c.Domain)
 		c.Decision = OriginIP
 	} else {
-		d.logger.Debug("domain going through proxy", "domain", c.Domain)
+		d.logger.Debug().Msgf("domain going through proxy: %s", c.Domain)
 		c.Decision = ProxyIP
 	}
 	return nil
@@ -160,7 +160,7 @@ func (d domain) Priority() uint {
 	return d.priority
 }
 
-func (d *domain) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
+func (d *domain) ConfigAndStart(logger zerolog.Logger, c *koanf.Koanf) error {
 	c = c.Cut(fmt.Sprintf("acl.%s", d.Name()))
 	d.logger = logger
 	d.routePrefixes = tst.New()

@@ -10,7 +10,7 @@ import (
 	"github.com/knadh/koanf"
 	doh "github.com/mosajjal/sniproxy/dohserver"
 	dohserver "github.com/mosajjal/sniproxy/dohserver"
-	"golang.org/x/exp/slog"
+	"github.com/rs/zerolog"
 	"inet.af/tcpproxy"
 )
 
@@ -25,7 +25,7 @@ type override struct {
 	tcpproxyport int
 	tlsCert      string
 	tlsKey       string
-	logger       *slog.Logger
+	logger       zerolog.Logger
 }
 
 // GetFreePort returns a random open port
@@ -49,15 +49,15 @@ func (o *override) startProxy() {
 	var err error
 	o.tcpproxyport, err = GetFreePort()
 	if err != nil {
-		o.logger.Error("failed to get a free port for tcpproxy: %s", err)
+		o.logger.Error().Msgf("failed to get a free port for tcpproxy: %s", err)
 		return
 	}
 	for k, v := range o.rules {
-		o.logger.Info("adding overide rule", k, v)
+		o.logger.Info().Msgf("adding overide rule %s -> %s", k, v)
 		// TODO: create a regex matcher for SNIRoute
 		o.tcpproxy.AddSNIRoute(fmt.Sprintf("127.0.0.1:%d", o.tcpproxyport), k, tcpproxy.To(v))
 	}
-	o.logger.Info("starting tcpproxy", "port", o.tcpproxyport)
+	o.logger.Info().Msgf("starting tcpproxy on port %d", o.tcpproxyport)
 	o.tcpproxy.Run()
 }
 
@@ -81,7 +81,7 @@ func (o override) Priority() uint {
 	return o.priority
 }
 
-func (o *override) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
+func (o *override) ConfigAndStart(logger zerolog.Logger, c *koanf.Koanf) error {
 	DNSBind := c.String("general.bind_dns_over_udp")
 	c = c.Cut(fmt.Sprintf("acl.%s", o.Name()))
 	tmpRules := c.StringMap("rules")
@@ -100,9 +100,9 @@ func (o *override) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
 		dohConfig.Listen = []string{fmt.Sprintf("127.0.0.1:%d", o.dohPort)}
 		if o.tlsCert == "" || o.tlsKey == "" {
 			_, _, err := doh.GenerateSelfSignedCertKey(dohSNI, nil, nil, os.TempDir())
-			o.logger.Info("certificate was not provided, generating a self signed cert in temp directory")
+			o.logger.Info().Msg("certificate was not provided, generating a self signed cert in temp directory")
 			if err != nil {
-				o.logger.Error("error while generating self-signed cert: ", "error", err)
+				o.logger.Error().Msgf("error while generating self-signed cert: %s", err)
 			}
 			o.tlsCert = filepath.Join(os.TempDir(), dohSNI+".crt")
 			o.tlsKey = filepath.Join(os.TempDir(), dohSNI+".key")

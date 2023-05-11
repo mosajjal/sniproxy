@@ -6,7 +6,7 @@ import (
 	"sort"
 
 	"github.com/knadh/koanf"
-	"golang.org/x/exp/slog"
+	"github.com/rs/zerolog"
 )
 
 // Decision is the type of decision that an ACL can make for each connection info
@@ -45,11 +45,11 @@ type ACL interface {
 	Decide(*ConnInfo) error
 	Name() string
 	Priority() uint
-	ConfigAndStart(*slog.Logger, *koanf.Koanf) error
+	ConfigAndStart(zerolog.Logger, *koanf.Koanf) error
 }
 
 // StartACLs starts all the ACLs that have been configured and registered
-func StartACLs(log *slog.Logger, k *koanf.Koanf) ([]ACL, error) {
+func StartACLs(log zerolog.Logger, k *koanf.Koanf) ([]ACL, error) {
 	var a []ACL
 	aclK := k.Cut("acl")
 	for _, acl := range availableACLs {
@@ -58,16 +58,15 @@ func StartACLs(log *slog.Logger, k *koanf.Koanf) ([]ACL, error) {
 		if !aclK.Bool(fmt.Sprintf("%s.enabled", (acl).Name())) {
 			continue
 		}
-		l := slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue((acl).Name())}}))
+		var l = log.With().Str("acl", (acl).Name()).Logger()
 		// we pass the full config to each ACL so that they can cut it themselves. it's needed for some ACLs that need
 		// to read the config of other ACLs or the global config
 		if err := acl.ConfigAndStart(l, k); err != nil {
-			log.Warn("failed to start ACL", "name", (acl).Name(), "err", err)
+			log.Warn().Msgf("failed to start ACL %s with error %s", (acl).Name(), err)
 			return a, err
 		}
 		a = append(a, acl)
-		log.Info("started ACL", "name", (acl).Name())
-		fmt.Printf("%+v\n", a)
+		log.Info().Msgf("started ACL: '%s'", (acl).Name())
 
 	}
 	return a, nil

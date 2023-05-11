@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/knadh/koanf"
+	"github.com/rs/zerolog"
 	"github.com/yl2chen/cidranger"
-	"golang.org/x/exp/slog"
 )
 
 // CIDR acl allows sniproxy to use a list of CIDR to allow or reject connections
@@ -23,7 +23,7 @@ type cidr struct {
 	RefreshInterval time.Duration `yaml:"refresh_interval"`
 	AllowRanger     cidranger.Ranger
 	RejectRanger    cidranger.Ranger
-	logger          *slog.Logger
+	logger          zerolog.Logger
 	priority        uint
 }
 
@@ -31,10 +31,10 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 	d.AllowRanger = cidranger.NewPCTrieRanger()
 	d.RejectRanger = cidranger.NewPCTrieRanger()
 
-	d.logger.Info("Loading the CIDR from file/url")
+	d.logger.Info().Msg("Loading the CIDR from file/url")
 	var scanner *bufio.Scanner
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
-		d.logger.Info("CIDR list is a URL, trying to fetch")
+		d.logger.Info().Msg("CIDR list is a URL, trying to fetch")
 		client := http.Client{
 			CheckRedirect: func(r *http.Request, via []*http.Request) error {
 				r.URL.Opaque = r.URL.Path
@@ -43,10 +43,10 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 		}
 		resp, err := client.Get(path)
 		if err != nil {
-			d.logger.Error(err.Error())
+			d.logger.Err(err)
 			return err
 		}
-		d.logger.Info("(re)fetching URL", "path", path)
+		d.logger.Info().Msgf("(re)fetching URL: ", path)
 		defer resp.Body.Close()
 		scanner = bufio.NewScanner(resp.Body)
 
@@ -55,7 +55,7 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 		if err != nil {
 			return err
 		}
-		d.logger.Info("(re)loading File", "path", path)
+		d.logger.Info().Msgf("(re)loading file: ", path)
 		defer file.Close()
 		scanner = bufio.NewScanner(file)
 	}
@@ -65,7 +65,7 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 		// cut the line at the first comma
 		cidr, policy, found := strings.Cut(row, ",")
 		if !found {
-			d.logger.Info(cidr + " is not a valid csv line, assuming reject")
+			d.logger.Info().Msg(cidr + " is not a valid csv line, assuming reject")
 		}
 		if policy == "allow" {
 			if _, netw, err := net.ParseCIDR(cidr); err == nil {
@@ -74,7 +74,7 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 				if _, netw, err := net.ParseCIDR(cidr + "/32"); err == nil {
 					_ = d.AllowRanger.Insert(cidranger.NewBasicRangerEntry(*netw))
 				} else {
-					d.logger.Error(err.Error())
+					d.logger.Err(err)
 				}
 			}
 		} else {
@@ -84,12 +84,12 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 				if _, netw, err := net.ParseCIDR(cidr + "/32"); err == nil {
 					_ = d.RejectRanger.Insert(cidranger.NewBasicRangerEntry(*netw))
 				} else {
-					d.logger.Error(err.Error())
+					d.logger.Err(err)
 				}
 			}
 		}
 	}
-	d.logger.Info("cidrs loaded", "len", d.AllowRanger.Len())
+	d.logger.Info().Msgf("%d cidr(s) loaded", d.AllowRanger.Len())
 
 	return nil
 }
@@ -128,7 +128,7 @@ func (d cidr) Priority() uint {
 }
 
 // Config function is what starts the ACL
-func (d *cidr) ConfigAndStart(logger *slog.Logger, c *koanf.Koanf) error {
+func (d *cidr) ConfigAndStart(logger zerolog.Logger, c *koanf.Koanf) error {
 	c = c.Cut(fmt.Sprintf("acl.%s", d.Name()))
 	d.logger = logger
 	d.Path = c.String("path")

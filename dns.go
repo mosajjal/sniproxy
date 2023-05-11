@@ -201,7 +201,7 @@ func runDNS(l zerolog.Logger) {
 			Cert:       crt,
 			Upstream:   c.BindDNSOverUDP,
 			TLSCompat:  true,
-			Debug:      true, // TODO: only enable this if log level is debug
+			Debug:      httpslog.GetLevel() == zerolog.DebugLevel,
 		}
 		doqServer, err := doqserver.New(doqConf)
 		if err != nil {

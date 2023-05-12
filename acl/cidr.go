@@ -46,7 +46,7 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 			d.logger.Err(err)
 			return err
 		}
-		d.logger.Info().Msgf("(re)fetching URL: ", path)
+		d.logger.Info().Msgf("(re)fetching URL: %s", path)
 		defer resp.Body.Close()
 		scanner = bufio.NewScanner(resp.Body)
 
@@ -55,7 +55,7 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 		if err != nil {
 			return err
 		}
-		d.logger.Info().Msgf("(re)loading file: ", path)
+		d.logger.Info().Msgf("(re)loading file: %s", path)
 		defer file.Close()
 		scanner = bufio.NewScanner(file)
 	}
@@ -103,18 +103,17 @@ func (d *cidr) loadCIDRCSVWorker() {
 
 // Decide checks if the connection is allowed or rejected
 func (d cidr) Decide(c *ConnInfo) error {
-	// check reject first
-	c.Decision = Reject
-
 	// get the IP from the connection
 	ipPort := strings.Split(c.SrcIP.String(), ":")
 	ip := net.ParseIP(ipPort[0])
 
+	prevDec := c.Decision
+
 	if match, err := d.RejectRanger.Contains(ip); match && err == nil {
-		return nil
+		c.Decision = Reject
 	}
 	if match, err := d.AllowRanger.Contains(ip); match && err == nil {
-		c.Decision = Accept
+		c.Decision = prevDec
 	}
 	return nil
 }

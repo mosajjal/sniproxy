@@ -55,8 +55,10 @@ func (dnsc *DNSClient) performExternalAQuery(fqdn string, QType uint16) ([]dns.R
 func processQuestion(q dns.Question, decision acl.Decision) ([]dns.RR, error) {
 	c.recievedDNS.Inc(1)
 	// Check to see if we should respond with our own IP
-	if decision == acl.ProxyIP || decision == acl.Override {
-		// Return the public IP.
+	switch decision {
+
+	// Return the public IP.
+	case acl.ProxyIP, acl.Override:
 		c.proxiedDNS.Inc(1)
 		dnslog.Info().Msgf("returned sniproxy address for domain %s", q.Name)
 
@@ -72,17 +74,23 @@ func processQuestion(q dns.Question, decision acl.Decision) ([]dns.RR, error) {
 			// return an empty response if we don't have an IPv6 address
 			return []dns.RR{}, nil
 		}
-	}
+
+	// return empty response for rejected ACL
+	case acl.Reject:
+		// drop the request
+		dnslog.Debug().Msgf("rejected request for domain %s", q.Name)
+		return []dns.RR{}, nil
 
 	// Otherwise do an upstream query and use that answer.
-	resp, rtt, err := c.dnsClient.performExternalAQuery(q.Name, q.Qtype)
-	if err != nil {
-		return nil, err
+	default:
+		resp, rtt, err := c.dnsClient.performExternalAQuery(q.Name, q.Qtype)
+		if err != nil {
+			return nil, err
+		}
+		dnslog.Info().Msgf("returned origin address for fqdn %s and rtt %s", q.Name, rtt)
+		return resp, nil
 	}
-
-	dnslog.Info().Msgf("returned origin address for fqdn %s and rtt %s", q.Name, rtt)
-
-	return resp, nil
+	return []dns.RR{}, nil
 }
 
 func (dnsc DNSClient) lookupDomain4(domain string) (net.IP, error) {

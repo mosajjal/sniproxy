@@ -1,0 +1,63 @@
+acl:
+  # geoip filtering
+  #
+  # the logic is as follows:
+  # 1. if mmdb is not loaded or not available, it's fail-open (allow by default)
+  # 2. if the IP can't be resolved to a country, it's rejected
+  # 3. if the country is in the blocked list, it's rejected
+  # 4. if the country is in the allowed list, it's allowed
+  # note that the reject list is checked first and takes priority over the allow list
+  # if the IP's country doesn't match any of the above, it's allowed if the blocked list is not empty
+  # for example, if the blockedlist is [US] and the allowedlist is empty, a connection from
+  # CA will be allowed. but if blockedlist is empty and allowedlist is [US], a connection from
+  # CA will be rejected.
+  geoip:
+    enabled: false
+    # priority of the geoip filter. lower priority means it's checked first, meaning it can be ovveriden by other ACLs with higehr priority number. 
+    priority: 10
+    # strictly blocked countries
+    blocked:
+    # allowed countries 
+    allowed:
+    # Path to the MMDB file. eg: /tmp/Country.mmdb, https://raw.githubusercontent.com/Loyalsoldier/geoip/release/Country.mmdb
+    path:
+    # Interval to re-fetch the MMDB file
+    refresh_interval: 24h0m0s
+  # domain filtering
+  domain:
+    enabled: true # false means ALL domains will be allowed to go through the proxy
+    # priority of the domain filter. lower priority means it's checked first. if multiple filters have the same priority, they're checked in random order
+    priority: 20
+    # Path to the domain list. eg: /tmp/domainlist.csv. Look at the example file for the format.
+    path: ../domains.csv
+    # Interval to re-fetch the domain list
+    refresh_interval: 1h0m0s
+  # IP/CIDR filtering
+  cidr:
+    enabled: true
+    # priority of the cidr filter. lower priority means it's checked first. if multiple filters have the same priority, they're checked in random order
+    priority: 30
+    # Path to the CIDR list. eg: /tmp/cidr.csv. Look at the example file for the format.
+    path: ../cidr.csv
+    # Interval to re-fetch the domain list
+    refresh_interval: 1h0m0s
+  # FQDN override. This ACL is used to override the destination IP to not be the one resolved by the upstream DNS or the proxy itself, rather a custom IP and port
+  # if the destination is HTTP, it uses tls_cert and tls_key certificate to terminate the original connection. 
+  override:
+    enabled: false
+    # priority of the override filter. lower priority means it's checked first. if multiple filters have the same priority, they're checked in random order
+    priority: 40
+    # override rules. unlike others, this one does not require a path to a file. it's a map of FQDNs wildcards to IPs and ports. only HTTPS is supported
+    # currently, these rules are checked with a simple for loop and string matching,
+    # so it's not suited for a large number of rules. if you have a big list of rules
+    # use a reverse proxy in front of sniproxy rather than using sniproxy as a reverse proxy
+    rules:
+      "one.one.one.one": "1.1.1.1:443"
+      "google.com": "8.8.8.8:443"
+    # enable listening on DoH on a specific SNI. example: "myawesomedoh.example.com". empty disables it. If you need DoH to be enabled and don't want
+    # any other overrides, enable this ACL with empty rules. DoH SNI will add a default rule and start. 
+    doh_sni: "myawesomedoh.example.com"
+    # Path to the certificate for handling tls decryption. eg: /tmp/mycert.pem
+    tls_cert:
+    # Path to the certificate key handling tls decryption. eg: /tmp/mycert.key
+    tls_key:

@@ -133,13 +133,13 @@ func TestMakeDecision(t *testing.T) {
 			// domain in domains.csv, ip REJECT in cidr.csv
 			connInfo: mockConnInfo("1.1.1.1", "google.de"),
 			config:   configs["acl_cidr_domain.yaml"],
-			expected: Reject, // still returns OriginIP in DNS !!!
+			expected: Reject,
 		},
 		{
 			// domain NOT in domains.csv, ip REJECT in cidr.csv
 			connInfo: mockConnInfo("1.1.1.1", "google.de"),
 			config:   configs["acl_cidr_domain.yaml"],
-			expected: Reject, // still returns OriginIP in DNS !!!
+			expected: Reject,
 		},
 	}
 

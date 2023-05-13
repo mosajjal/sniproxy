@@ -12,6 +12,23 @@ import (
 // Decision is the type of decision that an ACL can make for each connection info
 type Decision uint8
 
+func (d Decision) String() string {
+	switch d {
+	case Accept:
+		return "Accept"
+	case Reject:
+		return "Reject"
+	case ProxyIP:
+		return "ProxyIP"
+	case OriginIP:
+		return "OriginIP"
+	case Override:
+		return "Override"
+	default:
+		return "Unknown"
+	}
+}
+
 const (
 	// Accept shows the indifference of the ACL to the connection
 	Accept Decision = iota

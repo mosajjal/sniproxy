@@ -157,8 +157,8 @@ publicIP=$(curl -s 4.ident.me)
 
 # print some instructions for setting up DNS in clients to this
 echo "sniproxy is now running, you can set up DNS in your clients to $publicIP"
-echo "you can check the status of sniproxy by running: systemctl status sniproxy"
-echo "you can check the logs of sniproxy by running: journalctl -u sniproxy"
+echo "you can check the status of sniproxy by running: sudo systemctl status sniproxy"
+echo "you can check the logs of sniproxy by running: sudo journalctl -u sniproxy"
 echo "some of the features of sniproxy are not covered by this script, please refer to the GitHub page for more information: github.com/moasjjal/sniproxy"
 
 echo "if journal shows empty, you might need to reboot the server, sniproxy is set up as a service so it should start automatically after reboot"

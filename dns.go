@@ -1,136 +1,30 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
-	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/golang-collections/collections/tst"
 	"github.com/mosajjal/dnsclient"
 	doqserver "github.com/mosajjal/doqd/pkg/server"
-	slog "golang.org/x/exp/slog"
+	"github.com/mosajjal/sniproxy/acl"
+	"github.com/rs/zerolog"
 
 	"github.com/miekg/dns"
 )
 
+// DNSClient is a wrapper around the DNS client
 type DNSClient struct {
-	C dnsclient.Client
+	dnsclient.Client
 }
 
-var (
-	matchPrefix = uint8(1)
-	matchSuffix = uint8(2)
-	matchFQDN   = uint8(3)
-)
 var dnsLock sync.RWMutex
 
-var dnslog = slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue("dns")}}))
-
-// inDomainList returns true if the domain is meant to be SKIPPED and not go through sni proxy
-func inDomainList(fqdn string) bool {
-	fqdnLower := strings.ToLower(fqdn)
-	// check for fqdn match
-	if c.routeFQDNs[fqdnLower] == matchFQDN {
-		return false
-	}
-	// check for prefix match
-	if longestPrefix := c.routePrefixes.GetLongestPrefix(fqdnLower); longestPrefix != nil {
-		// check if the longest prefix is present in the type hashtable as a prefix
-		if c.routeFQDNs[longestPrefix.(string)] == matchPrefix {
-			return false
-		}
-	}
-	// check for suffix match. Note that suffix is just prefix reversed
-	if longestSuffix := c.routeSuffixes.GetLongestPrefix(reverse(fqdnLower)); longestSuffix != nil {
-		// check if the longest suffix is present in the type hashtable as a suffix
-		if c.routeFQDNs[longestSuffix.(string)] == matchSuffix {
-			return false
-		}
-	}
-	return true
-}
-
-func reverse(s string) string {
-	r := []rune(s)
-	for i, j := 0, len(r)-1; i < len(r)/2; i, j = i+1, j-1 {
-		r[i], r[j] = r[j], r[i]
-	}
-	return string(r)
-}
-
-// LoadDomainsCsv loads a domains Csv file/URL. returns 3 parameters:
-// 1. a TST for all the prefixes (type 1)
-// 2. a TST for all the suffixes (type 2)
-// 3. a hashtable for all the full match fqdn (type 3)
-func LoadDomainsCsv(Filename string) (*tst.TernarySearchTree, *tst.TernarySearchTree, map[string]uint8, error) {
-	prefix := tst.New()
-	suffix := tst.New()
-	all := make(map[string]uint8)
-	dnslog.Info("Loading the domain from file/url")
-	var scanner *bufio.Scanner
-	if strings.HasPrefix(Filename, "http://") || strings.HasPrefix(Filename, "https://") {
-		dnslog.Info("domain list is a URL, trying to fetch")
-		client := http.Client{
-			CheckRedirect: func(r *http.Request, via []*http.Request) error {
-				r.URL.Opaque = r.URL.Path
-				return nil
-			},
-		}
-		resp, err := client.Get(Filename)
-		if err != nil {
-			dnslog.Error(err.Error())
-			return prefix, suffix, all, err
-		}
-		dnslog.Info("(re)fetching URL", "url", Filename)
-		defer resp.Body.Close()
-		scanner = bufio.NewScanner(resp.Body)
-
-	} else {
-		file, err := os.Open(Filename)
-		if err != nil {
-			return prefix, suffix, all, err
-		}
-		dnslog.Info("(re)loading File", "file", Filename)
-		defer file.Close()
-		scanner = bufio.NewScanner(file)
-	}
-
-	for scanner.Scan() {
-		lowerCaseLine := strings.ToLower(scanner.Text())
-		// split the line by comma to understand thednslog.c
-		fqdn := strings.Split(lowerCaseLine, ",")
-		if len(fqdn) != 2 {
-			dnslog.Info(lowerCaseLine + " is not a valid line, assuming FQDN")
-			fqdn = []string{lowerCaseLine, "fqdn"}
-		}
-		// add the fqdn to the hashtable with its type
-		switch entryType := fqdn[1]; entryType {
-		case "prefix":
-			all[fqdn[0]] = matchPrefix
-			prefix.Insert(fqdn[0], fqdn[0])
-		case "suffix":
-			all[fqdn[0]] = matchSuffix
-			// suffix match is much faster if we reverse the strings and match for prefix
-			suffix.Insert(reverse(fqdn[0]), fqdn[0])
-		case "fqdn":
-			all[fqdn[0]] = matchFQDN
-		default:
-			//dnslog.Warnf("%s is not a valid line, assuming fqdn", lowerCaseLine)
-			dnslog.Info(lowerCaseLine + " is not a valid line, assuming FQDN")
-			all[fqdn[0]] = matchFQDN
-		}
-	}
-	dnslog.Info(fmt.Sprintf("%s loaded with %d prefix, %d suffix and %d fqdn", Filename, prefix.Len(), suffix.Len(), len(all)-prefix.Len()-suffix.Len()))
-
-	return prefix, suffix, all, nil
-}
+var dnslog = logger.With().Str("service", "dns").Logger()
 
 func (dnsc *DNSClient) performExternalAQuery(fqdn string, QType uint16) ([]dns.RR, time.Duration, error) {
 	if !strings.HasSuffix(fqdn, ".") {
@@ -142,29 +36,31 @@ func (dnsc *DNSClient) performExternalAQuery(fqdn string, QType uint16) ([]dns.R
 	msg.SetQuestion(fqdn, QType)
 	msg.SetEdns0(1232, true)
 	dnsLock.Lock()
-	if dnsc.C == nil {
-		return nil, 0, fmt.Errorf("DNS client is not initialised")
+	if dnsc == nil {
+		return nil, 0, fmt.Errorf("dns client is not initialised")
 	}
-	res, trr, err := dnsc.C.Query(context.Background(), &msg)
+	res, trr, err := dnsc.Query(context.Background(), &msg)
 	if err != nil {
 		if err.Error() == "EOF" {
-			dnslog.Info("reconnecting DNS...")
+			dnslog.Info().Msg("reconnecting DNS...")
 			// dnsc.C.Close()
 			// dnsc.C, err = dnsclient.New(c.UpstreamDNS, true)
-			err = c.dnsClient.C.Reconnect()
+			err = c.dnsClient.Reconnect()
 		}
 	}
 	dnsLock.Unlock()
 	return res, trr, err
 }
 
-func processQuestion(q dns.Question) ([]dns.RR, error) {
+func processQuestion(q dns.Question, decision acl.Decision) ([]dns.RR, error) {
 	c.recievedDNS.Inc(1)
 	// Check to see if we should respond with our own IP
-	if c.AllDomains || !inDomainList(q.Name) {
-		// Return the public IP.
+	switch decision {
+
+	// Return the public IP.
+	case acl.ProxyIP, acl.Override:
 		c.proxiedDNS.Inc(1)
-		dnslog.Info("returned sniproxy address for domain", "fqdn", q.Name)
+		dnslog.Info().Msgf("returned sniproxy address for domain %s", q.Name)
 
 		if q.Qtype == dns.TypeA {
 			rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, c.PublicIPv4))
@@ -178,17 +74,23 @@ func processQuestion(q dns.Question) ([]dns.RR, error) {
 			// return an empty response if we don't have an IPv6 address
 			return []dns.RR{}, nil
 		}
-	}
+
+	// return empty response for rejected ACL
+	case acl.Reject:
+		// drop the request
+		dnslog.Debug().Msgf("rejected request for domain %s", q.Name)
+		return []dns.RR{}, nil
 
 	// Otherwise do an upstream query and use that answer.
-	resp, rtt, err := c.dnsClient.performExternalAQuery(q.Name, q.Qtype)
-	if err != nil {
-		return nil, err
+	default:
+		resp, rtt, err := c.dnsClient.performExternalAQuery(q.Name, q.Qtype)
+		if err != nil {
+			return nil, err
+		}
+		dnslog.Info().Msgf("returned origin address for fqdn %s and rtt %s", q.Name, rtt)
+		return resp, nil
 	}
-
-	dnslog.Info("returned origin address", "fqdn", q.Name, "rtt", rtt)
-
-	return resp, nil
+	return []dns.RR{}, nil
 }
 
 func (dnsc DNSClient) lookupDomain4(domain string) (net.IP, error) {
@@ -224,9 +126,13 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	for _, q := range m.Question {
-		answers, err := processQuestion(q)
+		connInfo := acl.ConnInfo{
+			SrcIP:  w.RemoteAddr(),
+			Domain: q.Name,
+		}
+		acl.MakeDecision(&connInfo, c.acl)
+		answers, err := processQuestion(q, connInfo.Decision)
 		if err != nil {
-			dnslog.Error(err.Error())
 			continue
 		}
 		m.Answer = append(m.Answer, answers...)
@@ -235,74 +141,83 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	w.WriteMsg(m)
 }
 
-func runDNS() {
+func runDNS(l zerolog.Logger) {
+	dnslog = l.With().Str("service", "dns").Logger()
 	dns.HandleFunc(".", handleDNS)
 	// start DNS UDP serverUdp
-	go func() {
-		serverUDP := &dns.Server{Addr: fmt.Sprintf(":%d", c.DNSPort), Net: "udp"}
-		dnslog.Info("Started UDP DNS", "host", "0.0.0.0", "port", c.DNSPort)
-		err := serverUDP.ListenAndServe()
-		defer serverUDP.Shutdown()
-		if err != nil {
-			dnslog.Error("Error starting UDP DNS server", err)
-			dnslog.Info(fmt.Sprintf("Failed to start server: %s\nYou can run the following command to pinpoint which process is listening on port %d\nsudo ss -pltun -at '( dport = :%d or sport = :%d )'", err.Error(), c.DNSPort, c.DNSPort, c.DNSPort))
-			panic(2)
-		}
-	}()
-
-	// start DNS UDP serverTcp
-	if c.BindDNSOverTCP {
+	if c.BindDNSOverUDP != "" {
 		go func() {
-			serverTCP := &dns.Server{Addr: fmt.Sprintf(":%d", c.DNSPort), Net: "tcp"}
-			dnslog.Info("Started TCP DNS", "host", "0.0.0.0", "port", c.DNSPort)
+			serverUDP := &dns.Server{Addr: c.BindDNSOverUDP, Net: "udp"}
+			dnslog.Info().Msgf("started udp dns on %s", c.BindDNSOverUDP)
+			err := serverUDP.ListenAndServe()
+			defer serverUDP.Shutdown()
+			if err != nil {
+				dnslog.Error().Msgf("error starting udp dns server: %s", err)
+				dnslog.Info().Msgf("failed to start server: %s\nyou can run the following command to pinpoint which process is listening on your bind\nsudo ss -pltun", c.BindDNSOverUDP)
+				panic(2)
+			}
+		}()
+	}
+	// start DNS UDP serverTcp
+	if c.BindDNSOverTCP != "" {
+		go func() {
+			serverTCP := &dns.Server{Addr: c.BindDNSOverTCP, Net: "tcp"}
+			dnslog.Info().Msgf("started tcp dns on %s", c.BindDNSOverTCP)
 			err := serverTCP.ListenAndServe()
 			defer serverTCP.Shutdown()
 			if err != nil {
-				dnslog.Error("Failed to start server", err)
-				dnslog.Info(fmt.Sprintf("You can run the following command to pinpoint which process is listening on port %d\nsudo ss -pltun -at '( dport = :%d or sport = :%d )'", c.DNSPort, c.DNSPort, c.DNSPort))
+				dnslog.Error().Msgf("failed to start server %s", err)
+				dnslog.Info().Msgf("failed to start server: %s\nyou can run the following command to pinpoint which process is listening on your bind\nsudo ss -pltun", c.BindDNSOverUDP)
 			}
 		}()
 	}
 
 	// start DNS UDP serverTls
-	if c.BindDNSOverTLS {
+	if c.BindDNSOverTLS != "" {
 		go func() {
 			crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
 			if err != nil {
-				dnslog.Error(err.Error())
+				dnslog.Error().Msg(err.Error())
 				panic(2)
 
 			}
 			tlsConfig := &tls.Config{}
 			tlsConfig.Certificates = []tls.Certificate{crt}
 
-			serverTLS := &dns.Server{Addr: ":853", Net: "tcp-tls", TLSConfig: tlsConfig}
-			dnslog.Info("Started DoT DNS", "host", "0.0.0.0", "port", 853)
+			serverTLS := &dns.Server{Addr: c.BindDNSOverTLS, Net: "tcp-tls", TLSConfig: tlsConfig}
+			dnslog.Info().Msgf("started dot dns on %s", c.BindDNSOverTLS)
 			err = serverTLS.ListenAndServe()
 			defer serverTLS.Shutdown()
 			if err != nil {
-				dnslog.Error(err.Error())
+				dnslog.Error().Msg(err.Error())
 			}
 		}()
 	}
 
-	if c.BindDNSOverQuic {
+	if c.BindDNSOverQuic != "" {
 
 		crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
 		if err != nil {
-			dnslog.Error(err.Error())
+			dnslog.Error().Msg(err.Error())
 		}
 		tlsConfig := &tls.Config{}
 		tlsConfig.Certificates = []tls.Certificate{crt}
 
 		// Create the QUIC listener
-		doqServer, err := doqserver.New(":8853", crt, "127.0.0.1:53", true)
+		doqConf := doqserver.Config{
+			ListenAddr: c.BindDNSOverQuic,
+			Cert:       crt,
+			Upstream:   c.BindDNSOverUDP,
+			TLSCompat:  true,
+			Debug:      httpslog.GetLevel() == zerolog.DebugLevel,
+		}
+		doqServer, err := doqserver.New(doqConf)
 		if err != nil {
-			dnslog.Error(err.Error())
+			dnslog.Error().Msg(err.Error())
 		}
 
 		// Accept QUIC connections
-		dnslog.Info("Starting QUIC listener on :8853")
+		dnslog.Info().Msgf("starting quic listener %s", c.BindDNSOverQuic)
 		go doqServer.Listen()
 
 	}

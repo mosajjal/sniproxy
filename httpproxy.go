@@ -1,17 +1,17 @@
 package main
 
 import (
-	"fmt"
 	"io"
+	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
-	slog "golang.org/x/exp/slog"
+	"github.com/mosajjal/sniproxy/acl"
+	"github.com/rs/zerolog"
 )
 
-var httplog = slog.New(log.Handler().WithAttrs([]slog.Attr{{Key: "service", Value: slog.StringValue("http")}}))
+var httplog = logger.With().Str("service", "http").Logger()
 
 var passthruRequestHeaderKeys = [...]string{
 	"Accept",
@@ -37,13 +37,14 @@ var passthruResponseHeaderKeys = [...]string{
 	"Vary",
 }
 
-func runHTTP() {
+func runHTTP(l zerolog.Logger) {
+	httplog = l.With().Str("service", "http").Logger()
 	handler := http.DefaultServeMux
 
 	handler.HandleFunc("/", handle80)
 
 	s := &http.Server{
-		Addr:           fmt.Sprintf(":%d", c.HTTPPort),
+		Addr:           c.BindHTTP,
 		Handler:        handler,
 		ReadTimeout:    10 * time.Second,
 		WriteTimeout:   10 * time.Second,
@@ -51,27 +52,34 @@ func runHTTP() {
 	}
 
 	if err := s.ListenAndServe(); err != nil {
-		httplog.Error(err.Error())
+		httplog.Error().Msg(err.Error())
 		panic(-1)
 	}
 }
 
 func handle80(w http.ResponseWriter, r *http.Request) {
 	c.recievedHTTP.Inc(1)
-	if !checkGeoIPSkip(r.RemoteAddr) {
+
+	addr, err := net.ResolveTCPAddr("tcp", r.RemoteAddr)
+
+	connInfo := acl.ConnInfo{
+		SrcIP:  addr,
+		Domain: r.Host,
+	}
+	acl.MakeDecision(&connInfo, c.acl)
+	if connInfo.Decision == acl.Reject || connInfo.Decision == acl.ProxyIP || err != nil {
+		httplog.Info().Msgf("rejected request from ip: %s", r.RemoteAddr)
 		http.Error(w, "Could not reach origin server", 403)
 		return
 	}
-	httplog.Info("rejected request", "ip", r.RemoteAddr)
-
 	// if the URL starts with the public IP, it needs to be skipped to avoid loops
 	if strings.HasPrefix(r.Host, c.PublicIPv4) {
-		httplog.Warn("someone is requesting HTTP to sniproxy itself, ignoring...")
+		httplog.Warn().Msg("someone is requesting HTTP to sniproxy itself, ignoring...")
 		http.Error(w, "Could not reach origin server", 404)
 		return
 	}
 
-	httplog.Info("REQ", "method", r.Method, "host", r.Host, "url", r.URL)
+	httplog.Info().Msgf("REQ method %s, host: %s, url: %s", r.Method, r.Host, r.URL)
 
 	// Construct filtered header to send to origin server
 	hh := http.Header{}
@@ -96,31 +104,11 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 	rr.URL.Host = r.Host
 
 	// check to see if this host is listed to be processed, otherwise RESET
-	if !c.AllDomains && inDomainList(r.Host+".") {
-		http.Error(w, "Could not reach origin server", 403)
-		httplog.Warn("a client requested connection to " + r.Host + ", but it's not allowed as per configuration.. sending 403")
-		return
-	}
-
-	// if host is the reverse proxy, this request needs to be handled by the upstream address
-	if r.Host == c.reverseProxySNI {
-		reverseProxyURI, err := url.Parse(c.reverseProxyAddr)
-		if err != nil {
-			httplog.Error("failed to parse reverseproxy url", err)
-
-		}
-		// TODO: maybe this won't work and I need to be more specific
-		// rr.URL = reverseProxyURI
-		hostPort := ""
-		if reverseProxyURI.Port() != "80" {
-			hostPort = fmt.Sprintf("%s:%s", reverseProxyURI.Host, reverseProxyURI.Port())
-		} else {
-			hostPort = reverseProxyURI.Host
-		}
-		rr.URL.Host = reverseProxyURI.Host
-		// add the port to the host header
-		rr.Header.Set("Host", hostPort)
-	}
+	// if !c.AllDomains && inDomainList(r.Host+".") {
+	// 	http.Error(w, "Could not reach origin server", 403)
+	// 	httplog.Warn().Msg("a client requested connection to " + r.Host + ", but it's not allowed as per configuration.. sending 403")
+	// 	return
+	// }
 
 	transport := http.Transport{
 		Dial: c.dialer.Dial,
@@ -130,13 +118,12 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 	resp, err := transport.RoundTrip(&rr)
 	if err != nil {
 		// TODO: Passthru more error information
-		http.Error(w, "Could not reach origin server", 500)
-		httplog.Error(err.Error())
+		httplog.Error().Msg(err.Error())
 		return
 	}
 	defer resp.Body.Close()
 
-	httplog.Info("http response", "status_code", resp.Status)
+	httplog.Info().Msgf("http response with status_code %s", resp.Status)
 
 	// Transfer filtered header from origin server -> client
 	respH := w.Header()

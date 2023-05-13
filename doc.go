@@ -23,7 +23,7 @@ Using "go install" command:
 
 Using Docker or Podman:
 
-	docker run -d --pull always -p 80:80 -p 443:443 -p 53:53/udp -v "$(pwd):/tmp/" ghcr.io/mosajjal/sniproxy:latest --domainListPath https://raw.githubusercontent.com/mosajjal/sniproxy/master/domains.csv
+	docker run -d --pull always -p 80:80 -p 443:443 -p 53:53/udp -v "$(pwd)/config.defaults.yaml:/tmp/config.yaml" ghcr.io/mosajjal/sniproxy:latest --config /tmp/config.yaml
 
 Using the installer script:
 
@@ -34,36 +34,14 @@ Using the installer script:
 sniproxy can be configured using a configuration file or command line flags.
 The configuration file is a JSON file, and an example configuration file can be found under config.sample.json.
 
+Usage:
+
+	sniproxy [flags]
+
 Flags:
 
-	    --allDomains                           Route all HTTP(s) traffic through the SNI proxy
-	    --bindDnsOverQuic                      enable DNS over QUIC as well as UDP
-	    --bindDnsOverTcp                       enable DNS over TCP as well as UDP
-	    --bindDnsOverTls                       enable DNS over TLS as well as UDP
-	    --bindIP string                        Bind 443 and 80 to a Specific IP Address. Doesn't apply to DNS Server. DNS Server always listens on 0.0.0.0 (default "0.0.0.0")
-	-c, --config string                        path to JSON configuration file
-	    --dnsPort uint                         DNS Port to listen on. Should remain 53 in most cases (default 53)
-	    --domainListPath string                Path to the domain list. eg: /tmp/domainlist.csv. Look at the example file for the format.
-	    --domainListRefreshInterval duration   Interval to re-fetch the domain list (default 1h0m0s)
-	    --geoipExclude strings                 Exclude countries to be allowed to connect. example: US,CA
-	    --geoipInclude strings                 Include countries to be allowed to connect. example: US,CA
-	    --geoipPath string                     path to MMDB URL/path
-	                                           Example: https://raw.githubusercontent.com/Loyalsoldier/geoip/release/Country.mmdb
-	    --geoipRefreshInterval duration        MMDB refresh interval (default 1h0m0s)
-	-h, --help                                 help for sniproxy
-	    --httpPort uint                        HTTP Port to listen on. Should remain 80 in most cases (default 80)
-	    --httpsPort uint                       HTTPS Port to listen on. Should remain 443 in most cases (default 443)
-	    --interface string                     Interface used for outbound TLS connections. uses OS prefered one if empty
-	    --prometheus string                    Enable prometheus endpoint on IP:PORT. example: 127.0.0.1:8080. Always exposes /metrics and only supports HTTP
-	    --publicIPv4 string                    Public IP of the server, reply address of DNS A queries (default "YOUR_IPv4")
-	    --publicIPv6 string                    Public IPv6 of the server, reply address of DNS AAAA queries (default "YOUR_IPv6")
-	    --reverseProxy string                  enable reverse proxy for a specific FQDN and upstream URL. example: www.example.com::http://127.0.0.1:4001
-	    --reverseProxyCert string              Path to the certificate for reverse proxy. eg: /tmp/mycert.pem
-	    --reverseProxyKey string               Path to the certificate key for reverse proxy. eg: /tmp/mycert.key
-	    --tlsCert string                       Path to the certificate for DoH, DoT and DoQ. eg: /tmp/mycert.pem
-	    --tlsKey string                        Path to the certificate key for DoH, DoT and DoQ. eg: /tmp/mycert.key
-	    --upstreamDNS string                   Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query (default "udp://8.8.8.8:53")
-	    --upstreamSOCKS5 string                Use a SOCKS proxy for upstream HTTP/HTTPS traffic. Example: socks5://admin:admin@127.0.0.1:1080
+	-c, --config string   path to YAML configuration file (default "./config.defaults.yaml")
+	-h, --help            help for sniproxy
 
 # Setting Up an SNI Proxy Using Vultr
 

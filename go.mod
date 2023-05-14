@@ -9,13 +9,14 @@ require (
 	github.com/knadh/koanf v1.5.0
 	github.com/m13253/dns-over-https/v2 v2.3.3
 	github.com/miekg/dns v1.1.54
-	github.com/mosajjal/dnsclient v0.1.1-0.20230206011533-99fa18d84393
+	github.com/mosajjal/dnsclient v0.1.1-0.20230514112109-d716f3367d4c
 	github.com/mosajjal/doqd v0.0.0-20230511083851-8f2810faeb07
 	github.com/oschwald/maxminddb-golang v1.10.0
 	github.com/prometheus/client_golang v1.15.1
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
 	github.com/rs/zerolog v1.29.1
 	github.com/spf13/cobra v1.7.0
+	github.com/txthinking/socks5 v0.0.0-20230325130024-4230056ae301
 	github.com/yl2chen/cidranger v1.0.2
 	golang.org/x/exp v0.0.0-20230510235704-dd950f8aeaea
 	golang.org/x/net v0.10.0
@@ -33,7 +34,6 @@ require (
 	github.com/google/pprof v0.0.0-20230510103437-eeec1cb781c3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/infobloxopen/go-trees v0.0.0-20221216143356-66ceba885ebc // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.18 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
@@ -42,19 +42,15 @@ require (
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/onsi/ginkgo/v2 v2.9.4 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_model v0.4.0 // indirect
 	github.com/prometheus/common v0.43.0 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect
 	github.com/quic-go/qtls-go1-19 v0.3.2 // indirect
 	github.com/quic-go/qtls-go1-20 v0.2.2 // indirect
 	github.com/quic-go/quic-go v0.34.0 // indirect
-	github.com/rogpeppe/go-internal v1.10.0 // indirect
-	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/testify v1.8.1 // indirect
-	github.com/txthinking/runnergroup v0.0.0-20210608031112-152c7c4432bf // indirect
-	github.com/txthinking/socks5 v0.0.0-20230325130024-4230056ae301 // indirect
+	github.com/txthinking/runnergroup v0.0.0-20230325130830-408dc5853f86 // indirect
 	golang.org/x/crypto v0.9.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/sys v0.8.0 // indirect

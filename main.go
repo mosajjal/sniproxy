@@ -350,11 +350,11 @@ func main() {
 		logger.Info().Msgf("Using interface %s", c.Interface)
 		ief, err := net.InterfaceByName(c.Interface)
 		if err != nil {
-			logger.Err(err)
+			logger.Error().Msg(err.Error())
 		}
 		addrs, err := ief.Addrs()
 		if err != nil {
-			logger.Err(err)
+			logger.Error().Msg(err.Error())
 		}
 		c.sourceAddr = net.ParseIP(addrs[0].String())
 
@@ -363,7 +363,7 @@ func main() {
 	if c.UpstreamSOCKS5 != "" {
 		uri, err := url.Parse(c.UpstreamSOCKS5)
 		if err != nil {
-			logger.Err(err)
+			logger.Error().Msg(err.Error())
 		}
 		if uri.Scheme != "socks5" {
 			logger.Error().Msg("only SOCKS5 is supported")
@@ -376,7 +376,7 @@ func main() {
 		socksAuth.Password, _ = uri.User.Password()
 		c.dialer, err = socks5.NewClient(uri.Host, socksAuth.User, socksAuth.Password, 60, 60)
 		if err != nil {
-			logger.Err(err)
+			logger.Error().Msg(err.Error())
 		}
 	} else {
 		c.dialer = proxy.Direct
@@ -384,7 +384,12 @@ func main() {
 
 	tmp, err := dnsclient.New(c.UpstreamDNS, true, c.UpstreamSOCKS5)
 	if err != nil {
-		logger.Err(err)
+		logger.Error().Msgf("error setting up dns client, removing proxy if provided: %v", err)
+		tmp, err = dnsclient.New(c.UpstreamDNS, false, "")
+		if err != nil {
+			logger.Error().Msgf("error setting up dns client: %v", err)
+			return
+		}
 	}
 	c.dnsClient = DNSClient{tmp}
 	defer c.dnsClient.Close()

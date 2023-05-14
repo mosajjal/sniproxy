@@ -63,7 +63,8 @@ func handle443(conn net.Conn) error {
 	}
 
 	httpslog.Info().Msgf("establishing connection to %s:%d from %s with SNI %s", rAddr.String(), rPort, conn.RemoteAddr().String(), sni)
-	var target *net.TCPConn
+	// var target *net.TCPConn
+	var target net.Conn
 	// if the proxy is not set, or the destination IP is localhost, we'll use the OS's TCP stack and won't go through the SOCKS5 proxy
 	if c.dialer == proxy.Direct || rAddr.IsLoopback() {
 		// with the manipulation of the soruce address, we can set the outbound interface
@@ -78,13 +79,13 @@ func handle443(conn net.Conn) error {
 			return err
 		}
 	} else {
-		tmp, err := c.dialer.Dial("tcp", fmt.Sprintf("%s:%d", rAddr, rPort))
+		target, err = c.dialer.Dial("tcp", fmt.Sprintf("%s:%d", rAddr, rPort))
 		if err != nil {
 			httpslog.Info().Msgf("could not connect to target with error: %s", err)
 			conn.Close()
 			return err
 		}
-		target = tmp.(*net.TCPConn)
+		// target = tmp.(*net.TCPConn)
 	}
 	defer target.Close()
 	c.proxiedHTTPS.Inc(1)

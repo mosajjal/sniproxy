@@ -16,6 +16,7 @@ import (
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/rs/zerolog"
+	"github.com/txthinking/socks5"
 
 	prometheusmetrics "github.com/deathowl/go-metrics-prometheus"
 	"github.com/mosajjal/dnsclient"
@@ -370,13 +371,12 @@ func main() {
 		}
 
 		logger.Info().Msgf("Using an upstream SOCKS5 proxy: %s", uri.Host)
-		u := uri.User.Username()
-		p, _ := uri.User.Password()
-		socksAuth := proxy.Auth{User: u, Password: p}
-		c.dialer, err = proxy.SOCKS5("tcp", uri.Host, &socksAuth, proxy.Direct)
+		socksAuth := new(proxy.Auth)
+		socksAuth.User = uri.User.Username()
+		socksAuth.Password, _ = uri.User.Password()
+		c.dialer, err = socks5.NewClient(uri.Host, socksAuth.User, socksAuth.Password, 60, 60)
 		if err != nil {
-			logger.Error().Msgf("can't connect to proxy: %s", err.Error())
-			os.Exit(1)
+			logger.Err(err)
 		}
 	} else {
 		c.dialer = proxy.Direct

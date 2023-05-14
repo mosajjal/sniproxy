@@ -84,7 +84,7 @@ func (d *domain) LoadDomainsCsv(Filename string) error {
 		}
 		resp, err := client.Get(Filename)
 		if err != nil {
-			d.logger.Err(err)
+			d.logger.Error().Msg(err.Error())
 			return err
 		}
 		d.logger.Info().Msgf("(re)fetching URL: %s", Filename)

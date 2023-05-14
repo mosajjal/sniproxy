@@ -43,7 +43,7 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 		}
 		resp, err := client.Get(path)
 		if err != nil {
-			d.logger.Err(err)
+			d.logger.Error().Msg(err.Error())
 			return err
 		}
 		d.logger.Info().Msgf("(re)fetching URL: %s", path)
@@ -74,7 +74,7 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 				if _, netw, err := net.ParseCIDR(cidr + "/32"); err == nil {
 					_ = d.AllowRanger.Insert(cidranger.NewBasicRangerEntry(*netw))
 				} else {
-					d.logger.Err(err)
+					d.logger.Error().Msg(err.Error())
 				}
 			}
 		} else {
@@ -84,7 +84,7 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 				if _, netw, err := net.ParseCIDR(cidr + "/32"); err == nil {
 					_ = d.RejectRanger.Insert(cidranger.NewBasicRangerEntry(*netw))
 				} else {
-					d.logger.Err(err)
+					d.logger.Error().Msg(err.Error())
 				}
 			}
 		}

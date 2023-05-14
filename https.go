@@ -64,7 +64,8 @@ func handle443(conn net.Conn) error {
 
 	httpslog.Info().Msgf("establishing connection to %s:%d from %s with SNI %s", rAddr.String(), rPort, conn.RemoteAddr().String(), sni)
 	var target *net.TCPConn
-	if c.dialer == proxy.Direct {
+	// if the proxy is not set, or the destination IP is localhost, we'll use the OS's TCP stack and won't go through the SOCKS5 proxy
+	if c.dialer == proxy.Direct || rAddr.IsLoopback() {
 		// with the manipulation of the soruce address, we can set the outbound interface
 		srcAddr := net.TCPAddr{
 			IP:   c.sourceAddr,

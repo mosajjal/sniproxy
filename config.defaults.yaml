@@ -1,6 +1,8 @@
 general:
   # Upsteam DNS URI. examples: Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query
   upstream_dns: udp://8.8.8.8:53
+  # enable send DNS through socks5
+  upstream_dns_over_socks5: false
   # Use a SOCKS proxy for upstream HTTP/HTTPS traffic. Example: socks5://admin:
   upstream_socks5:
   # DNS Port to listen on. Should remain 53 in most cases. MUST NOT be empty

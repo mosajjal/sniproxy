@@ -83,6 +83,7 @@ func processQuestion(q dns.Question, decision acl.Decision) ([]dns.RR, error) {
 
 	// Otherwise do an upstream query and use that answer.
 	default:
+		dnslog.Debug().Msgf("perform external query for domain %s", q.Name)
 		resp, rtt, err := c.dnsClient.performExternalAQuery(q.Name, q.Qtype)
 		if err != nil {
 			return nil, err

@@ -37,20 +37,21 @@ import (
 )
 
 type runConfig struct {
-	PublicIPv4      string `yaml:"public_ipv4"`
-	PublicIPv6      string `yaml:"public_ipv6"`
-	UpstreamDNS     string `yaml:"upstream_dns"`
-	UpstreamSOCKS5  string `yaml:"upstream_socks5"`
-	BindDNSOverUDP  string `yaml:"bind_dns_over_udp"`
-	BindDNSOverTCP  string `yaml:"bind_dns_over_tcp"`
-	BindDNSOverTLS  string `yaml:"bind_dns_over_tls"`
-	BindDNSOverQuic string `yaml:"bind_dns_over_quic"`
-	TLSCert         string `yaml:"tls_cert"`
-	TLSKey          string `yaml:"tls_key"`
-	BindHTTP        string `yaml:"bind_http"`
-	BindHTTPS       string `yaml:"bind_https"`
-	Interface       string `yaml:"interface"`
-	BindPrometheus  string `yaml:"bind_prometheus"`
+	PublicIPv4            string `yaml:"public_ipv4"`
+	PublicIPv6            string `yaml:"public_ipv6"`
+	UpstreamDNS           string `yaml:"upstream_dns"`
+	UpstreamDNSOverSocks5 bool   `yaml:"upstream_dns_over_socks5"`
+	UpstreamSOCKS5        string `yaml:"upstream_socks5"`
+	BindDNSOverUDP        string `yaml:"bind_dns_over_udp"`
+	BindDNSOverTCP        string `yaml:"bind_dns_over_tcp"`
+	BindDNSOverTLS        string `yaml:"bind_dns_over_tls"`
+	BindDNSOverQuic       string `yaml:"bind_dns_over_quic"`
+	TLSCert               string `yaml:"tls_cert"`
+	TLSKey                string `yaml:"tls_key"`
+	BindHTTP              string `yaml:"bind_http"`
+	BindHTTPS             string `yaml:"bind_https"`
+	Interface             string `yaml:"interface"`
+	BindPrometheus        string `yaml:"bind_prometheus"`
 
 	acl []acl.ACL
 
@@ -273,6 +274,7 @@ func main() {
 	}
 
 	c.UpstreamDNS = generalConfig.String("upstream_dns")
+	c.UpstreamDNSOverSocks5 = generalConfig.Bool("upstream_dns_over_socks5")
 	c.UpstreamSOCKS5 = generalConfig.String("upstream_socks5")
 	c.BindDNSOverUDP = generalConfig.String("bind_dns_over_udp")
 	c.BindDNSOverTCP = generalConfig.String("bind_dns_over_tcp")
@@ -382,7 +384,12 @@ func main() {
 		c.dialer = proxy.Direct
 	}
 
-	tmp, err := dnsclient.New(c.UpstreamDNS, true, c.UpstreamSOCKS5)
+	dnsProxy := c.UpstreamSOCKS5
+	if c.UpstreamSOCKS5 != "" && !c.UpstreamDNSOverSocks5 {
+		logger.Debug().Msg("disabling socks5 for dns")
+		dnsProxy = ""
+	}
+	tmp, err := dnsclient.New(c.UpstreamDNS, true, dnsProxy)
 	if err != nil {
 		logger.Error().Msgf("error setting up dns client, removing proxy if provided: %v", err)
 		tmp, err = dnsclient.New(c.UpstreamDNS, false, "")

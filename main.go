@@ -220,7 +220,7 @@ func main() {
 	}
 	flags := cmd.Flags()
 	config := flags.StringP("config", "c", "", "path to YAML configuration file")
-	_ = flags.Bool("defaultconfig", false, "write the default config yaml file to path")
+	_ = flags.Bool("defaultconfig", false, "write the default config yaml file to stdout")
 	_ = flags.BoolP("version", "v", false, "show version info and exit")
 	if err := cmd.Execute(); err != nil {
 		logger.Error().Msgf("failed to execute command: %s", err)

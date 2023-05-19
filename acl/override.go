@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/knadh/koanf"
-	dohserver "github.com/mosajjal/sniproxy/dohserver/v2"
+	dohserver "github.com/mosajjal/sniproxy/v2/dohserver"
 	"github.com/rs/zerolog"
 	"inet.af/tcpproxy"
 )

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 
-	acl "github.com/mosajjal/sniproxy/acl/v2"
+	acl "github.com/mosajjal/sniproxy/v2/acl"
 	"github.com/rs/zerolog"
 	"golang.org/x/net/proxy"
 )

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	acl "github.com/mosajjal/sniproxy/acl/v2"
+	acl "github.com/mosajjal/sniproxy/v2/acl"
 	"github.com/rs/zerolog"
 )
 

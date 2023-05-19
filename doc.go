@@ -19,7 +19,7 @@ Alternatively, there are other ways to install, which include:
 
 Using "go install" command:
 
-	go install github.com/mosajjal/sniproxy@latest
+	go install github.com/mosajjal/sniproxy/v2@latest
 
 Using Docker or Podman:
 

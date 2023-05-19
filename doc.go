@@ -34,14 +34,14 @@ Using the installer script:
 sniproxy can be configured using a configuration file or command line flags.
 The configuration file is a JSON file, and an example configuration file can be found under config.sample.json.
 
-Usage:
-
 	sniproxy [flags]
 
-Flags:
+	Flags:
 
-	-c, --config string   path to YAML configuration file (default "./config.defaults.yaml")
-	-h, --help            help for sniproxy
+		-c, --config string   path to YAML configuration file
+			--defaultconfig   write the default config yaml file to stdout
+		-h, --help            help for sniproxy
+		-v, --version         show version info and exit
 
 # Setting Up an SNI Proxy Using Vultr
 

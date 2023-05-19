@@ -11,7 +11,7 @@ import (
 
 	"github.com/mosajjal/dnsclient"
 	doqserver "github.com/mosajjal/doqd/pkg/server"
-	"github.com/mosajjal/sniproxy/acl"
+	acl "github.com/mosajjal/sniproxy/acl/v2"
 	"github.com/rs/zerolog"
 
 	"github.com/miekg/dns"

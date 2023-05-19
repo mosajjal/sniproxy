@@ -8,8 +8,7 @@ import (
 	"strings"
 
 	"github.com/knadh/koanf"
-	doh "github.com/mosajjal/sniproxy/dohserver"
-	dohserver "github.com/mosajjal/sniproxy/dohserver"
+	dohserver "github.com/mosajjal/sniproxy/dohserver/v2"
 	"github.com/rs/zerolog"
 	"inet.af/tcpproxy"
 )
@@ -99,7 +98,7 @@ func (o *override) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error 
 		dohConfig := dohserver.NewDefaultConfig()
 		dohConfig.Listen = []string{fmt.Sprintf("127.0.0.1:%d", o.dohPort)}
 		if o.tlsCert == "" || o.tlsKey == "" {
-			_, _, err := doh.GenerateSelfSignedCertKey(dohSNI, nil, nil, os.TempDir())
+			_, _, err := dohserver.GenerateSelfSignedCertKey(dohSNI, nil, nil, os.TempDir())
 			o.logger.Info().Msg("certificate was not provided, generating a self signed cert in temp directory")
 			if err != nil {
 				o.logger.Error().Msgf("error while generating self-signed cert: %s", err)

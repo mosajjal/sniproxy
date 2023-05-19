@@ -32,8 +32,8 @@ import (
 	"github.com/miekg/dns"
 	"golang.org/x/net/proxy"
 
-	"github.com/mosajjal/sniproxy/acl"
-	doh "github.com/mosajjal/sniproxy/dohserver"
+	acl "github.com/mosajjal/sniproxy/acl/v2"
+	doh "github.com/mosajjal/sniproxy/dohserver/v2"
 )
 
 type runConfig struct {

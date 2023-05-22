@@ -88,11 +88,9 @@ above script is an interactive installer, it will ask you a few questions and th
 
 above wizard will set up execution arguments for sniproxy. you can edit them by running
 
-	sudo systemctl edit --full sniproxy
+	sudo vim /opt/sniproxy/sniproxy.yaml
 
-and then edit the execStart line to your liking. for example, if you want to use a different port for HTTP, you can edit the line to
-
-	ExecStart=/opt/sniproxy/sniproxy httpPort 8080
+and edit parameters as you see fit. for example, you can add more domains to the list of domains to proxy, or change the port numbers.
 
 [byosh]: https://github.com/mosajjal/byosh
 [SimpleSNIProxy]: https://github.com/ziozzang/SimpleSNIProxy

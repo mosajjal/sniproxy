@@ -3,9 +3,9 @@ package acl
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -75,19 +75,13 @@ func (g *geoIP) initializeGeoIP() error {
 		}
 
 	} else {
-		file, err := os.Open(g.Path)
-		if err != nil {
-			return err
-		}
 		g.logger.Info().Msgf("(re)loading File: %s", g.Path)
-		defer file.Close()
-		n, err := file.Read(scanner)
-		if err != nil {
+		var err error
+		if scanner, err = ioutil.ReadFile(g.Path); err != nil {
 			return err
 		}
-		g.logger.Info().Msgf("geolocation database with %d bytes loaded", n)
-
 	}
+	g.logger.Info().Msgf("geolocation database with %d bytes loaded", len(scanner))
 	var err error
 	if g.mmdb, err = maxminddb.FromBytes(scanner); err != nil {
 		//g.logger.Warn("%d bytes read, %s", len(scanner), err)

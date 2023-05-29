@@ -145,12 +145,13 @@ func (g geoIP) checkGeoIPSkip(addr net.Addr) bool {
 
 // implement the ACL interface
 func (g geoIP) Decide(c *ConnInfo) error {
+	g.logger.Debug().Any("conn", c).Msg("deciding on geoip acl")
 	// in checkGeoIPSkip, false is reject
 	if !g.checkGeoIPSkip(c.SrcIP) {
 		g.logger.Info().Msgf("rejecting connection from ip %s", c.SrcIP)
 		c.Decision = Reject
 	}
-	g.logger.Debug().Msgf("GeoIP decision for ip %s is %#v", c.SrcIP, c.Decision)
+	g.logger.Debug().Any("conn", c).Msg("decided on geoip acl")
 	return nil
 }
 func (g geoIP) Name() string {

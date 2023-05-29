@@ -18,7 +18,7 @@ require (
 	github.com/spf13/cobra v1.7.0
 	github.com/txthinking/socks5 v0.0.0-20230325130024-4230056ae301
 	github.com/yl2chen/cidranger v1.0.2
-	golang.org/x/exp v0.0.0-20230510235704-dd950f8aeaea
+	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1
 	golang.org/x/net v0.10.0
 	inet.af/tcpproxy v0.0.0-20221017015627-91f861402626
 )
@@ -35,16 +35,16 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/infobloxopen/go-trees v0.0.0-20221216143356-66ceba885ebc // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.18 // indirect
+	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
-	github.com/onsi/ginkgo/v2 v2.9.4 // indirect
+	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/prometheus/client_model v0.4.0 // indirect
-	github.com/prometheus/common v0.43.0 // indirect
-	github.com/prometheus/procfs v0.9.0 // indirect
+	github.com/prometheus/common v0.44.0 // indirect
+	github.com/prometheus/procfs v0.10.1 // indirect
 	github.com/quic-go/qtls-go1-19 v0.3.2 // indirect
 	github.com/quic-go/qtls-go1-20 v0.2.2 // indirect
 	github.com/quic-go/quic-go v0.34.0 // indirect

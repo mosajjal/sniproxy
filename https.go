@@ -9,9 +9,7 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-var httpslog = logger.With().Str("service", "https").Logger()
-
-func handle443(conn net.Conn) error {
+func handle443(conn net.Conn, httpslog zerolog.Logger) error {
 	c.recievedHTTPS.Inc(1)
 
 	defer conn.Close()
@@ -33,20 +31,20 @@ func handle443(conn net.Conn) error {
 	acl.MakeDecision(&connInfo, c.acl)
 
 	if connInfo.Decision == acl.Reject {
-		httpslog.Warn().Msgf("ACL rejection for ip %s", conn.RemoteAddr().String())
+		httpslog.Warn().Msgf("ACL rejection srcip=%s", conn.RemoteAddr().String())
 		conn.Close()
 		return nil
 	}
 	// check SNI against domainlist for an extra layer of security
 	if connInfo.Decision == acl.OriginIP {
-		httpslog.Warn().Msg("a client requested connection to " + sni + ", but it's not allowed as per configuration.. resetting TCP")
+		httpslog.Warn().Str("sni", sni).Str("srcip", conn.RemoteAddr().String()).Msg("connection request rejected since it's not allowed as per ACL.. resetting TCP")
 		conn.Close()
 		return nil
 	}
 	rPort := 443
 	var rAddr net.IP
 	if connInfo.Decision == acl.Override {
-		httpslog.Debug().Msgf("overriding destination IP %s with %s", rAddr.String(), connInfo.DstIP.String())
+		httpslog.Debug().Msgf("overriding destination IP %s with %s as per override ACL", rAddr.String(), connInfo.DstIP.String())
 		rAddr = connInfo.DstIP.IP
 		rPort = connInfo.DstIP.Port
 	} else {
@@ -62,7 +60,7 @@ func handle443(conn net.Conn) error {
 		}
 	}
 
-	httpslog.Info().Msgf("establishing connection to %s:%d from %s with SNI %s", rAddr.String(), rPort, conn.RemoteAddr().String(), sni)
+	httpslog.Debug().Str("sni", sni).Str("srcip", conn.RemoteAddr().String()).Str("dstip", rAddr.String()).Msg("connection request accepted")
 	// var target *net.TCPConn
 	var target net.Conn
 	// if the proxy is not set, or the destination IP is localhost, we'll use the OS's TCP stack and won't go through the SOCKS5 proxy
@@ -95,7 +93,7 @@ func handle443(conn net.Conn) error {
 }
 
 func runHTTPS(log zerolog.Logger) {
-	httpslog = log.With().Str("service", "https").Logger()
+	httpslog := log.With().Str("service", "https").Logger()
 	l, err := net.Listen("tcp", c.BindHTTPS)
 	if err != nil {
 		httpslog.Err(err)
@@ -107,8 +105,6 @@ func runHTTPS(log zerolog.Logger) {
 		if err != nil {
 			httpslog.Err(err)
 		}
-		go func() {
-			go handle443(c)
-		}()
+		go handle443(c, httpslog)
 	}
 }

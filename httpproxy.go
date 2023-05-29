@@ -11,7 +11,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
-var httplog = logger.With().Str("service", "http").Logger()
+// var httplog = logger.With().Str("service", "http").Logger()
+var httplog zerolog.Logger
 
 var passthruRequestHeaderKeys = [...]string{
 	"Accept",
@@ -67,8 +68,8 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 		Domain: r.Host,
 	}
 	acl.MakeDecision(&connInfo, c.acl)
-	if connInfo.Decision == acl.Reject || connInfo.Decision == acl.ProxyIP || err != nil {
-		httplog.Info().Msgf("rejected request from ip: %s", r.RemoteAddr)
+	if connInfo.Decision == acl.Reject || connInfo.Decision == acl.OriginIP || err != nil {
+		httplog.Info().Str("src_ip", r.RemoteAddr).Msgf("rejected request")
 		http.Error(w, "Could not reach origin server", 403)
 		return
 	}
@@ -79,7 +80,7 @@ func handle80(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httplog.Info().Msgf("REQ method %s, host: %s, url: %s", r.Method, r.Host, r.URL)
+	httplog.Info().Str("method", r.Method).Str("host", r.Host).Str("url", r.URL.String()).Msg("request received")
 
 	// Construct filtered header to send to origin server
 	hh := http.Header{}

@@ -58,7 +58,7 @@ func processQuestion(q dns.Question, decision acl.Decision) ([]dns.RR, error) {
 	switch decision {
 
 	// Return the public IP.
-	case acl.ProxyIP, acl.Override:
+	case acl.ProxyIP, acl.Override, acl.Accept: // TODO: accept should be here?
 		c.proxiedDNS.Inc(1)
 		dnslog.Info().Msgf("returned sniproxy address for domain %s", q.Name)
 
@@ -210,7 +210,7 @@ func runDNS(l zerolog.Logger) {
 			Cert:       crt,
 			Upstream:   c.BindDNSOverUDP,
 			TLSCompat:  true,
-			Debug:      httpslog.GetLevel() == zerolog.DebugLevel,
+			Debug:      dnslog.GetLevel() == zerolog.DebugLevel,
 		}
 		doqServer, err := doqserver.New(doqConf)
 		if err != nil {

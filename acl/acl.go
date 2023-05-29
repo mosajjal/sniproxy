@@ -10,36 +10,19 @@ import (
 )
 
 // Decision is the type of decision that an ACL can make for each connection info
-type Decision uint8
-
-func (d Decision) String() string {
-	switch d {
-	case Accept:
-		return "Accept"
-	case Reject:
-		return "Reject"
-	case ProxyIP:
-		return "ProxyIP"
-	case OriginIP:
-		return "OriginIP"
-	case Override:
-		return "Override"
-	default:
-		return "Unknown"
-	}
-}
+type Decision string
 
 const (
 	// Accept shows the indifference of the ACL to the connection
-	Accept Decision = iota
+	Accept Decision = "Accept"
 	// Reject shows that the ACL has rejected the connection. each ACL should check this before proceeding to check the connection against its rules
-	Reject
+	Reject Decision = "Reject"
 	// ProxyIP shows that the ACL has decided to proxy the connection through sniproxy rather than the origin IP
-	ProxyIP
+	ProxyIP Decision = "ProxyIP"
 	// OriginIP shows that the ACL has decided to proxy the connection through the origin IP rather than sniproxy
-	OriginIP
+	OriginIP Decision = "OriginIP"
 	// Override shows that the ACL has decided to override the connection and proxy it through the specified DstIP and DstPort
-	Override
+	Override Decision = "Override"
 )
 
 // ConnInfo contains all the information about a connection that is available
@@ -96,6 +79,10 @@ func MakeDecision(c *ConnInfo, a []ACL) error {
 		if err := acl.Decide(c); err != nil {
 			return err
 		}
+	}
+	// if ACL list is empty, we accept the connection
+	if len(a) == 0 {
+		c.Decision = Accept
 	}
 	return nil
 }

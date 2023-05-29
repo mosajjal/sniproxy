@@ -80,6 +80,10 @@ func MakeDecision(c *ConnInfo, a []ACL) error {
 			return err
 		}
 	}
+	// if ACL list is empty, we accept the connection
+	if len(a) == 0 {
+		c.Decision = Accept
+	}
 	return nil
 }
 

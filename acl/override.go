@@ -61,15 +61,17 @@ func (o *override) startProxy() {
 }
 
 func (o override) Decide(c *ConnInfo) error {
+	o.logger.Debug().Any("conn", c).Msg("deciding on override acl")
 	domain := strings.TrimSuffix(c.Domain, ".")
 	for k := range o.rules {
 		if strings.TrimSuffix(k, ".") == domain {
 			c.Decision = Override
 			a, _ := net.ResolveTCPAddr("tcp", fmt.Sprintf("127.0.0.1:%d", o.tcpproxyport))
 			c.DstIP = *a
-			return nil
+			break
 		}
 	}
+	o.logger.Debug().Any("conn", c).Msg("decided on override acl")
 	return nil
 }
 

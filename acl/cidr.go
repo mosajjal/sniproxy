@@ -103,6 +103,7 @@ func (d *cidr) loadCIDRCSVWorker() {
 
 // Decide checks if the connection is allowed or rejected
 func (d cidr) Decide(c *ConnInfo) error {
+	d.logger.Debug().Any("conn", c).Msg("deciding on cidr acl")
 	// get the IP from the connection
 	ipPort := strings.Split(c.SrcIP.String(), ":")
 	ip := net.ParseIP(ipPort[0])

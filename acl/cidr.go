@@ -109,6 +109,10 @@ func (d cidr) Decide(c *ConnInfo) error {
 	ip := net.ParseIP(ipPort[0])
 
 	prevDec := c.Decision
+	// set the prev decision to accept if it's empty
+	if prevDec == "" {
+		prevDec = Accept
+	}
 
 	if match, err := d.RejectRanger.Contains(ip); match && err == nil {
 		c.Decision = Reject

@@ -1,11 +1,17 @@
-FROM golang:1.20.3-alpine3.17
+FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:1.20.4-alpine3.18
+
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
+
 LABEL maintainer "Ali Mosajjal <hi@n0p.me>"
 RUN apk add --no-cache git
 RUN mkdir /app
 ADD . /app/
 WORKDIR /app
 ENV CGO_ENABLED=0
-RUN go build -ldflags "-s -w -X main.version=$(git describe --tags) -X main.commit=$(git rev-parse HEAD)" -o sniproxy .
+RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags "-s -w -X main.version=$(git describe --tags) -X main.commit=$(git rev-parse HEAD)" -o sniproxy .
 CMD ["/app/sniproxy"]
 
 FROM scratch

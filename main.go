@@ -19,7 +19,6 @@ import (
 	"github.com/txthinking/socks5"
 
 	prometheusmetrics "github.com/deathowl/go-metrics-prometheus"
-	"github.com/mosajjal/dnsclient"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rcrowley/go-metrics"
 
@@ -146,7 +145,7 @@ func getPublicIPv4() (string, error) {
 		// backup method of getting a public IP
 		if externalIP == "" {
 			// dig +short myip.opendns.com @208.67.222.222
-			dnsRes, _, err := c.dnsClient.performExternalAQuery("myip.opendns.com.", dns.TypeA)
+			dnsRes, err := c.dnsClient.performExternalAQuery("myip.opendns.com.", dns.TypeA)
 			if err != nil {
 				return "", err
 			}
@@ -194,7 +193,7 @@ func getPublicIPv6() (string, error) {
 		// backup method of getting a public IP
 		if externalIP == "" {
 			// dig +short -6 myip.opendns.com aaaa @2620:0:ccc::2
-			dnsRes, _, err := c.dnsClient.performExternalAQuery("myip.opendns.com.", dns.TypeAAAA)
+			dnsRes, err := c.dnsClient.performExternalAQuery("myip.opendns.com.", dns.TypeAAAA)
 			if err != nil {
 				return "", err
 			}
@@ -259,6 +258,9 @@ func main() {
 	stdlog.SetOutput(logger)
 
 	switch l := generalConfig.String("log_level"); l {
+	case "trace":
+		zerolog.SetGlobalLevel(zerolog.TraceLevel)
+		logger = logger.With().Caller().Logger()
 	case "debug":
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 		logger = logger.With().Caller().Logger()
@@ -389,17 +391,39 @@ func main() {
 		logger.Debug().Msg("disabling socks5 for dns")
 		dnsProxy = ""
 	}
-	tmp, err := dnsclient.New(c.UpstreamDNS, true, dnsProxy)
+	tmp, err := NewDNSClient(c.UpstreamDNS, true, dnsProxy)
 	if err != nil {
 		logger.Error().Msgf("error setting up dns client, removing proxy if provided: %v", err)
-		tmp, err = dnsclient.New(c.UpstreamDNS, false, "")
+		tmp, err = NewDNSClient(c.UpstreamDNS, false, "")
 		if err != nil {
 			logger.Error().Msgf("error setting up dns client: %v", err)
 			return
 		}
 	}
 	c.dnsClient = DNSClient{tmp}
-	defer c.dnsClient.Close()
+
+	// do a test DNS Query against one.one.one.one to make sure it works
+	res, err := c.dnsClient.performExternalAQuery("one.one.one.one", 1) //1 is the type for A records
+	if err != nil {
+		logger.Error().Msgf("error performing test dns query: %v", err)
+		return
+	}
+	if len(res) == 0 {
+		logger.Error().Msg("error performing test dns query: no answer")
+		return
+	}
+	if res[0].Header().Rrtype != dns.TypeA {
+		logger.Error().Msg("error performing test dns query: wrong type")
+		return
+	}
+	// the result needs to be 1.1.1.1 or 1.0.0.1
+	if res[0].(*dns.A).A.String() != "1.1.1.1" && res[0].(*dns.A).A.String() != "1.0.0.1" {
+		logger.Error().Msg(`error performing test dns query: wrong result.
+		Maybe your Firewall is overwriting DNS requests?`)
+		return
+	}
+	logger.Info().Msgf("test dns query successful: %s", res[0].String())
+
 	go runHTTP(logger)
 	go runHTTPS(logger)
 	go runDNS(logger)

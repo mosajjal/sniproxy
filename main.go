@@ -386,15 +386,22 @@ func main() {
 		c.dialer = proxy.Direct
 	}
 
-	dnsProxy := c.UpstreamSOCKS5
+	// set up upstream socks for dns if configured
+	var dnsProxy *url.URL
 	if c.UpstreamSOCKS5 != "" && !c.UpstreamDNSOverSocks5 {
 		logger.Debug().Msg("disabling socks5 for dns")
-		dnsProxy = ""
+		dnsProxy = nil
+	} else if c.UpstreamSOCKS5 != "" && c.UpstreamDNSOverSocks5 {
+		dnsProxy, err = url.Parse(c.UpstreamSOCKS5)
+		if err != nil {
+			logger.Error().Msgf("error parsing dns proxy url: %v", err)
+			dnsProxy = nil
+		}
 	}
 	tmp, err := NewDNSClient(c.UpstreamDNS, true, dnsProxy)
 	if err != nil {
 		logger.Error().Msgf("error setting up dns client, removing proxy if provided: %v", err)
-		tmp, err = NewDNSClient(c.UpstreamDNS, false, "")
+		tmp, err = NewDNSClient(c.UpstreamDNS, false, nil)
 		if err != nil {
 			logger.Error().Msgf("error setting up dns client: %v", err)
 			return

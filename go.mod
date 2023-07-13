@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/deathowl/go-metrics-prometheus v0.0.0-20221009205350-f2a1482ba35b
-	github.com/folbricht/routedns v0.1.21-0.20230608054240-75fca5afc5df
+	github.com/folbricht/routedns v0.1.21-0.20230702082540-cdcb15556c2f
 	github.com/golang-collections/collections v0.0.0-20130729185459-604e922904d3
 	github.com/gorilla/handlers v1.5.1
 	github.com/knadh/koanf v1.5.0

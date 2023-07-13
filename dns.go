@@ -12,6 +12,8 @@ import (
 	doqserver "github.com/mosajjal/doqd/pkg/server"
 	acl "github.com/mosajjal/sniproxy/v2/acl"
 	"github.com/rs/zerolog"
+	"github.com/txthinking/socks5"
+	"golang.org/x/net/proxy"
 
 	"github.com/miekg/dns"
 )
@@ -218,6 +220,29 @@ func runDNS(l zerolog.Logger) {
 	}
 }
 
+func getDialerFromProxyURL(proxyURL *url.URL) (*rdns.Dialer, error) {
+	var dialer rdns.Dialer
+	// by default dialer is direct
+	dialer = &net.Dialer{}
+	if proxyURL != nil {
+		// create a net dialer with proxy
+		var auth *proxy.Auth
+		if proxyURL.User != nil {
+			auth = new(proxy.Auth)
+			auth.User = proxyURL.User.Username()
+			if p, ok := proxyURL.User.Password(); ok {
+				auth.Password = p
+			}
+		}
+		c, err := socks5.NewClient(proxyURL.Host, auth.User, auth.Password, 0, 5) // 0 and 5 are borrowed from routedns pr
+		if err != nil {
+			return nil, err
+		}
+		dialer = c
+	}
+	return &dialer, nil
+}
+
 /*
 NewDNSClient creates a DNS Client by parsing a URI and returning the appropriate client for it
 URI string could look like below:
@@ -229,9 +254,13 @@ URI string could look like below:
   - quic://dns.adguard.com:8853
   - tcp-tls://dns.adguard.com:853
 */
-func NewDNSClient(uri string, skipVerify bool, proxy string) (*DNSClient, error) {
+func NewDNSClient(uri string, skipVerify bool, proxyURL *url.URL) (*DNSClient, error) {
 	// TODO: Proxy support is not yet implemented
 	parsedURL, err := url.Parse(uri)
+	if err != nil {
+		return nil, err
+	}
+	dialer, err := getDialerFromProxyURL(proxyURL)
 	if err != nil {
 		return nil, err
 	}
@@ -244,9 +273,11 @@ func NewDNSClient(uri string, skipVerify bool, proxy string) (*DNSClient, error)
 			port = "53"
 		}
 		Address := rdns.AddressWithDefault(host, port)
+
 		opt := rdns.DNSClientOptions{
 			LocalAddr: c.sourceAddr,
 			UDPSize:   1300,
+			Dialer:    *dialer,
 		}
 		id, err := rdns.NewDNSClient("id", Address, "udp", opt)
 		if err != nil {
@@ -264,6 +295,7 @@ func NewDNSClient(uri string, skipVerify bool, proxy string) (*DNSClient, error)
 		opt := rdns.DNSClientOptions{
 			LocalAddr: c.sourceAddr,
 			UDPSize:   1300,
+			Dialer:    *dialer,
 		}
 		id, err := rdns.NewDNSClient("id", Address, "tcp", opt)
 		if err != nil {
@@ -280,6 +312,7 @@ func NewDNSClient(uri string, skipVerify bool, proxy string) (*DNSClient, error)
 			TLSConfig:     tlsConfig,
 			BootstrapAddr: "1.1.1.1", //TODO: make this configurable
 			LocalAddr:     c.sourceAddr,
+			Dialer:        *dialer,
 		}
 		id, err := rdns.NewDoTClient("id", parsedURL.Host, opt)
 		if err != nil {
@@ -299,6 +332,7 @@ func NewDNSClient(uri string, skipVerify bool, proxy string) (*DNSClient, error)
 			BootstrapAddr: "1.1.1.1", //TODO: make this configurable
 			Transport:     transport,
 			LocalAddr:     c.sourceAddr,
+			Dialer:        *dialer,
 		}
 		id, err := rdns.NewDoHClient("id", parsedURL.String(), opt)
 		if err != nil {
@@ -315,6 +349,7 @@ func NewDNSClient(uri string, skipVerify bool, proxy string) (*DNSClient, error)
 		opt := rdns.DoQClientOptions{
 			TLSConfig: tlsConfig,
 			LocalAddr: c.sourceAddr,
+			// Dialer:    *dialer, // TODO: wait for #317 in folbricht/routedns to add DoQ
 		}
 		id, err := rdns.NewDoQClient("id", parsedURL.Host, opt)
 		if err != nil {

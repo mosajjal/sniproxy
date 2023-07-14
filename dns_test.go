@@ -11,17 +11,17 @@ func TestDNSClient_lookupDomain4(t *testing.T) {
 	// dnsClients = append(dnsClients, tmp)
 	// tmp, err = NewDNSClient("https://cloudflare-dns.com/dns-query", true, "")
 	// dnsClients = append(dnsClients, tmp)
-	tmp, err := NewDNSClient("quic://dns.adguard-dns.com:8853", true, "")
+	tmp, err := NewDNSClient("quic://dns.adguard-dns.com:8853", true, nil)
 	if err != nil {
 		t.Errorf("failed to set up DNS client")
 	}
 	dnsClients = append(dnsClients, tmp)
-	tmp, err = NewDNSClient("tcp://1.1.1.1:53", true, "")
+	tmp, err = NewDNSClient("tcp://1.1.1.1:53", true, nil)
 	if err != nil {
 		t.Errorf("failed to set up DNS client")
 	}
 	dnsClients = append(dnsClients, tmp)
-	tmp, err = NewDNSClient("udp://1.1.1.1:53", true, "")
+	tmp, err = NewDNSClient("udp://1.1.1.1:53", true, nil)
 	if err != nil {
 		t.Errorf("failed to set up DNS client")
 	}

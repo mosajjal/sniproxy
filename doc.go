@@ -31,8 +31,9 @@ Using the installer script:
 
 # How to Run
 
-sniproxy can be configured using a configuration file or command line flags.
-The configuration file is a JSON file, and an example configuration file can be found under config.sample.json.
+sniproxy can be configured using a configuration file or environment variables
+The configuration file is a YAML file, and an example configuration file can be found under [Sample config file].
+you can find the instructions for the environment variables there as well.
 
 	sniproxy [flags]
 
@@ -96,5 +97,6 @@ and edit parameters as you see fit. for example, you can add more domains to the
 [SimpleSNIProxy]: https://github.com/ziozzang/SimpleSNIProxy
 [these instructions]: https://gist.github.com/zoilomora/f7d264cefbb589f3f1b1fc2cea2c844c
 [Vultr referal link]: https://www.vultr.com/?ref=8578601
+[Sample config file]: ./config.sample.yaml
 */
 package main

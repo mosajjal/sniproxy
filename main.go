@@ -13,6 +13,7 @@ import (
 
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/yaml"
+	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/rs/zerolog"
@@ -71,8 +72,9 @@ type runConfig struct {
 var c runConfig
 
 var (
-	version string = "v2-UNKNOWN"
-	commit  string = "NOT PROVIDED"
+	version   string = "v2-UNKNOWN"
+	commit    string = "NOT PROVIDED"
+	envPrefix string = "SNIPROXY_" // used as the prefix to read env variables at runtime
 )
 
 //go:embed config.defaults.yaml
@@ -249,6 +251,11 @@ func main() {
 			panic(err)
 		}
 	}
+	// load environment variables starting with envPrefix
+	k.Load(env.Provider(envPrefix, ".", func(s string) string {
+		return strings.Replace(strings.ToLower(
+			strings.TrimPrefix(s, envPrefix)), "__", ".", -1)
+	}), nil)
 
 	logger.Info().Msgf("starting sniproxy. version %s, commit %s", version, commit)
 

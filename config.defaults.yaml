@@ -1,3 +1,9 @@
+# you can use environment variables to override the settings provided int he default config or the config file as well
+# to do that use the `SNIPROXY_` prefix, followed by the full tree of the parameter you need to update, separated by two underscores (__)
+# for example, if you want the dns server to be bounded to 0.0.0.0:5555 rather than the default 0.0.0.0:53, you run the sniproxy (or the container)
+# with the following environment variable
+# SNIPROXY_GENERAL__BIND_DNS_OVER_UDP=0.0.0.0:5555
+# note that there are 2 underscores between general and BIND_DNS_OVER_UDP
 general:
   # Upsteam DNS URI. examples: Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query
   upstream_dns: udp://8.8.8.8:53

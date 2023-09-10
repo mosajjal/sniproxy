@@ -1,4 +1,4 @@
-module github.com/mosajjal/sniproxy/v2
+module github.com/yaser-k/sniproxy/v2
 
 go 1.20
 

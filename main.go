@@ -53,6 +53,7 @@ type runConfig struct {
 	BindHTTPS             string `yaml:"bind_https"`
 	Interface             string `yaml:"interface"`
 	BindPrometheus        string `yaml:"bind_prometheus"`
+	AllowConnToLocal      bool   `yaml:"allow_conn_to_local"`
 
 	acl []acl.ACL
 
@@ -301,6 +302,7 @@ func main() {
 		c.PublicIPv6, _ = getPublicIPv6()
 	}
 	c.BindPrometheus = generalConfig.String("prometheus")
+	c.AllowConnToLocal = generalConfig.Bool("allow_conn_to_local")
 
 	var err error
 	c.acl, err = acl.StartACLs(&logger, k)

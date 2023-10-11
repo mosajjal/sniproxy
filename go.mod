@@ -19,7 +19,7 @@ require (
 	github.com/txthinking/socks5 v0.0.0-20230325130024-4230056ae301
 	github.com/yl2chen/cidranger v1.0.2
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
-	golang.org/x/net v0.15.0
+	golang.org/x/net v0.17.0
 	inet.af/tcpproxy v0.0.0-20221017015627-91f861402626
 )
 
@@ -49,9 +49,9 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/txthinking/runnergroup v0.0.0-20230325130830-408dc5853f86 // indirect
 	go.uber.org/mock v0.3.0 // indirect
-	golang.org/x/crypto v0.13.0 // indirect
+	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/mod v0.12.0 // indirect
-	golang.org/x/sys v0.12.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/tools v0.13.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect

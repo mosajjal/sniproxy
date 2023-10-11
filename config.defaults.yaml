@@ -35,6 +35,8 @@ general:
   public_ipv4:
   # Public IPv6 of the server, reply address of DNS AAAA queries
   public_ipv6:
+  # allow connections from sniproxy to RFC1918 addresses. default is false.
+  allow_conn_to_local: false
   # log level for the application. choices: debug, info, warn, error
   # by default, the logs are colored so they are not suited for logging to a file.
   # in order to disable colors, set NO_COLOR=true in the environment variables

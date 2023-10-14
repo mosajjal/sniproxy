@@ -99,4 +99,4 @@ and edit parameters as you see fit. for example, you can add more domains to the
 [Vultr referal link]: https://www.vultr.com/?ref=8578601
 [Sample config file]: ./config.sample.yaml
 */
-package main
+package sniproxy

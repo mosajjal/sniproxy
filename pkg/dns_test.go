@@ -1,4 +1,4 @@
-package main
+package sniproxy
 
 import (
 	"net"
@@ -12,7 +12,7 @@ func TestDNSClient_lookupDomain4(t *testing.T) {
 	if err != nil {
 		t.Errorf("failed to set up DNS client")
 	}
-	dnsc := DNSClient{tmp}
+	dnsc := DNSClient{tmp, nil}
 	tests := []struct {
 		client  DNSClient
 		name    string

@@ -1,4 +1,4 @@
-package main
+package sniproxy
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 
 	"github.com/mosajjal/dnsclient"
 	doqserver "github.com/mosajjal/doqd/pkg/server"
-	acl "github.com/mosajjal/sniproxy/v2/acl"
+	"github.com/mosajjal/sniproxy/v2/pkg/acl"
 	"github.com/rs/zerolog"
 
 	"github.com/miekg/dns"
@@ -20,13 +20,12 @@ import (
 // DNSClient is a wrapper around the DNS client
 type DNSClient struct {
 	dnsclient.Client
+	C *Config
 }
 
 var dnsLock sync.RWMutex
 
-var dnslog = logger.With().Str("service", "dns").Logger()
-
-func (dnsc *DNSClient) performExternalAQuery(fqdn string, QType uint16) ([]dns.RR, time.Duration, error) {
+func (dnsc *DNSClient) PerformExternalAQuery(fqdn string, QType uint16) ([]dns.RR, time.Duration, error) {
 	if !strings.HasSuffix(fqdn, ".") {
 		fqdn = fqdn + "."
 	}
@@ -42,25 +41,25 @@ func (dnsc *DNSClient) performExternalAQuery(fqdn string, QType uint16) ([]dns.R
 	res, trr, err := dnsc.Query(context.Background(), &msg)
 	if err != nil {
 		if err.Error() == "EOF" {
-			dnslog.Info().Msg("reconnecting DNS...")
+			// dnslog.Info().Msg("reconnecting DNS...")
 			// dnsc.C.Close()
 			// dnsc.C, err = dnsclient.New(c.UpstreamDNS, true)
-			err = c.dnsClient.Reconnect()
+			err = dnsc.C.DnsClient.Reconnect()
 		}
 	}
 	dnsLock.Unlock()
 	return res, trr, err
 }
 
-func processQuestion(q dns.Question, decision acl.Decision) ([]dns.RR, error) {
-	c.recievedDNS.Inc(1)
+func processQuestion(c *Config, l zerolog.Logger, q dns.Question, decision acl.Decision) ([]dns.RR, error) {
+	c.RecievedDNS.Inc(1)
 	// Check to see if we should respond with our own IP
 	switch decision {
 
 	// Return the public IP.
 	case acl.ProxyIP, acl.Override, acl.Accept: // TODO: accept should be here?
-		c.proxiedDNS.Inc(1)
-		dnslog.Info().Msgf("returned sniproxy address for domain %s", q.Name)
+		c.ProxiedDNS.Inc(1)
+		l.Info().Msgf("returned sniproxy address for domain %s", q.Name)
 
 		if q.Qtype == dns.TypeA {
 			rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, c.PublicIPv4))
@@ -78,17 +77,17 @@ func processQuestion(q dns.Question, decision acl.Decision) ([]dns.RR, error) {
 	// return empty response for rejected ACL
 	case acl.Reject:
 		// drop the request
-		dnslog.Debug().Msgf("rejected request for domain %s", q.Name)
+		l.Debug().Msgf("rejected request for domain %s", q.Name)
 		return []dns.RR{}, nil
 
 	// Otherwise do an upstream query and use that answer.
 	default:
-		dnslog.Debug().Msgf("perform external query for domain %s", q.Name)
-		resp, rtt, err := c.dnsClient.performExternalAQuery(q.Name, q.Qtype)
+		l.Debug().Msgf("perform external query for domain %s", q.Name)
+		resp, rtt, err := c.DnsClient.PerformExternalAQuery(q.Name, q.Qtype)
 		if err != nil {
 			return nil, err
 		}
-		dnslog.Info().Msgf("returned origin address for fqdn %s and rtt %s", q.Name, rtt)
+		l.Info().Msgf("returned origin address for fqdn %s and rtt %s", q.Name, rtt)
 		return resp, nil
 	}
 	return []dns.RR{}, nil
@@ -98,7 +97,7 @@ func (dnsc DNSClient) lookupDomain4(domain string) (net.IP, error) {
 	if !strings.HasSuffix(domain, ".") {
 		domain = domain + "."
 	}
-	rAddrDNS, _, err := dnsc.performExternalAQuery(domain, dns.TypeA)
+	rAddrDNS, _, err := dnsc.PerformExternalAQuery(domain, dns.TypeA)
 	if err != nil {
 		return nil, err
 	}
@@ -114,47 +113,47 @@ func (dnsc DNSClient) lookupDomain4(domain string) (net.IP, error) {
 	}
 	return nil, fmt.Errorf("[DNS] Unknown type %s", dns.TypeToString[rAddrDNS[0].Header().Rrtype])
 }
+func handleDNS(c *Config, l zerolog.Logger) dns.HandlerFunc {
+	return func(w dns.ResponseWriter, r *dns.Msg) {
+		m := new(dns.Msg)
+		m.SetReply(r)
+		m.Compress = false
 
-func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
-	m := new(dns.Msg)
-	m.SetReply(r)
-	m.Compress = false
+		if r.Opcode != dns.OpcodeQuery {
+			m.SetRcode(r, dns.RcodeNotImplemented)
+			w.WriteMsg(m)
+			return
+		}
 
-	if r.Opcode != dns.OpcodeQuery {
-		m.SetRcode(r, dns.RcodeNotImplemented)
+		for _, q := range m.Question {
+			connInfo := acl.ConnInfo{
+				SrcIP:  w.RemoteAddr(),
+				Domain: q.Name,
+			}
+			acl.MakeDecision(&connInfo, c.Acl)
+			answers, err := processQuestion(c, l, q, connInfo.Decision)
+			if err != nil {
+				continue
+			}
+			m.Answer = append(m.Answer, answers...)
+		}
+
 		w.WriteMsg(m)
-		return
 	}
-
-	for _, q := range m.Question {
-		connInfo := acl.ConnInfo{
-			SrcIP:  w.RemoteAddr(),
-			Domain: q.Name,
-		}
-		acl.MakeDecision(&connInfo, c.acl)
-		answers, err := processQuestion(q, connInfo.Decision)
-		if err != nil {
-			continue
-		}
-		m.Answer = append(m.Answer, answers...)
-	}
-
-	w.WriteMsg(m)
 }
 
-func runDNS(l zerolog.Logger) {
-	dnslog = l.With().Str("service", "dns").Logger()
-	dns.HandleFunc(".", handleDNS)
+func RunDNS(c *Config, l zerolog.Logger) {
+	dns.HandleFunc(".", handleDNS(c, l))
 	// start DNS UDP serverUdp
 	if c.BindDNSOverUDP != "" {
 		go func() {
 			serverUDP := &dns.Server{Addr: c.BindDNSOverUDP, Net: "udp"}
-			dnslog.Info().Msgf("started udp dns on %s", c.BindDNSOverUDP)
+			l.Info().Msgf("started udp dns on %s", c.BindDNSOverUDP)
 			err := serverUDP.ListenAndServe()
 			defer serverUDP.Shutdown()
 			if err != nil {
-				dnslog.Error().Msgf("error starting udp dns server: %s", err)
-				dnslog.Info().Msgf("failed to start server: %s\nyou can run the following command to pinpoint which process is listening on your bind\nsudo ss -pltun", c.BindDNSOverUDP)
+				l.Error().Msgf("error starting udp dns server: %s", err)
+				l.Info().Msgf("failed to start server: %s\nyou can run the following command to pinpoint which process is listening on your bind\nsudo ss -pltun", c.BindDNSOverUDP)
 				panic(2)
 			}
 		}()
@@ -163,12 +162,12 @@ func runDNS(l zerolog.Logger) {
 	if c.BindDNSOverTCP != "" {
 		go func() {
 			serverTCP := &dns.Server{Addr: c.BindDNSOverTCP, Net: "tcp"}
-			dnslog.Info().Msgf("started tcp dns on %s", c.BindDNSOverTCP)
+			l.Info().Msgf("started tcp dns on %s", c.BindDNSOverTCP)
 			err := serverTCP.ListenAndServe()
 			defer serverTCP.Shutdown()
 			if err != nil {
-				dnslog.Error().Msgf("failed to start server %s", err)
-				dnslog.Info().Msgf("failed to start server: %s\nyou can run the following command to pinpoint which process is listening on your bind\nsudo ss -pltun", c.BindDNSOverUDP)
+				l.Error().Msgf("failed to start server %s", err)
+				l.Info().Msgf("failed to start server: %s\nyou can run the following command to pinpoint which process is listening on your bind\nsudo ss -pltun", c.BindDNSOverUDP)
 			}
 		}()
 	}
@@ -178,7 +177,7 @@ func runDNS(l zerolog.Logger) {
 		go func() {
 			crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
 			if err != nil {
-				dnslog.Error().Msg(err.Error())
+				l.Error().Msg(err.Error())
 				panic(2)
 
 			}
@@ -186,11 +185,11 @@ func runDNS(l zerolog.Logger) {
 			tlsConfig.Certificates = []tls.Certificate{crt}
 
 			serverTLS := &dns.Server{Addr: c.BindDNSOverTLS, Net: "tcp-tls", TLSConfig: tlsConfig}
-			dnslog.Info().Msgf("started dot dns on %s", c.BindDNSOverTLS)
+			l.Info().Msgf("started dot dns on %s", c.BindDNSOverTLS)
 			err = serverTLS.ListenAndServe()
 			defer serverTLS.Shutdown()
 			if err != nil {
-				dnslog.Error().Msg(err.Error())
+				l.Error().Msg(err.Error())
 			}
 		}()
 	}
@@ -199,7 +198,7 @@ func runDNS(l zerolog.Logger) {
 
 		crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
 		if err != nil {
-			dnslog.Error().Msg(err.Error())
+			l.Error().Msg(err.Error())
 		}
 		tlsConfig := &tls.Config{}
 		tlsConfig.Certificates = []tls.Certificate{crt}
@@ -210,15 +209,15 @@ func runDNS(l zerolog.Logger) {
 			Cert:       crt,
 			Upstream:   c.BindDNSOverUDP,
 			TLSCompat:  true,
-			Debug:      dnslog.GetLevel() == zerolog.DebugLevel,
+			Debug:      l.GetLevel() == zerolog.DebugLevel,
 		}
 		doqServer, err := doqserver.New(doqConf)
 		if err != nil {
-			dnslog.Error().Msg(err.Error())
+			l.Error().Msg(err.Error())
 		}
 
 		// Accept QUIC connections
-		dnslog.Info().Msgf("starting quic listener %s", c.BindDNSOverQuic)
+		l.Info().Msgf("starting quic listener %s", c.BindDNSOverQuic)
 		go doqServer.Listen()
 
 	}

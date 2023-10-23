@@ -66,7 +66,7 @@ configPath="/opt/sniproxy/sniproxy.yaml"
 yqPath="/opt/sniproxy/yq"
 
 # download sniproxy
-wget -o $execCommand http://bin.n0p.me/sniproxy
+wget -O $execCommand http://bin.n0p.me/sniproxy
 # make it executable
 chmod +x $execCommand
 

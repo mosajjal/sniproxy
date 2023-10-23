@@ -1,31 +1,33 @@
 package sniproxy
 
 import (
-	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/url"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/mosajjal/dnsclient"
+	rdns "github.com/folbricht/routedns"
+
 	doqserver "github.com/mosajjal/doqd/pkg/server"
 	"github.com/mosajjal/sniproxy/v2/pkg/acl"
 	"github.com/rs/zerolog"
+	"github.com/txthinking/socks5"
+	"golang.org/x/net/proxy"
 
 	"github.com/miekg/dns"
 )
 
 // DNSClient is a wrapper around the DNS client
 type DNSClient struct {
-	dnsclient.Client
+	rdns.Resolver
 	C *Config
 }
 
 var dnsLock sync.RWMutex
 
-func (dnsc *DNSClient) PerformExternalAQuery(fqdn string, QType uint16) ([]dns.RR, time.Duration, error) {
+func (dnsc *DNSClient) PerformExternalAQuery(fqdn string, QType uint16) ([]dns.RR, error) {
 	if !strings.HasSuffix(fqdn, ".") {
 		fqdn = fqdn + "."
 	}
@@ -36,19 +38,11 @@ func (dnsc *DNSClient) PerformExternalAQuery(fqdn string, QType uint16) ([]dns.R
 	msg.SetEdns0(1232, true)
 	dnsLock.Lock()
 	if dnsc == nil {
-		return nil, 0, fmt.Errorf("dns client is not initialised")
+		return nil, fmt.Errorf("dns client is not initialised")
 	}
-	res, trr, err := dnsc.Query(context.Background(), &msg)
-	if err != nil {
-		if err.Error() == "EOF" {
-			// dnslog.Info().Msg("reconnecting DNS...")
-			// dnsc.C.Close()
-			// dnsc.C, err = dnsclient.New(c.UpstreamDNS, true)
-			err = dnsc.C.DnsClient.Reconnect()
-		}
-	}
+	res, err := dnsc.Resolve(&msg, rdns.ClientInfo{})
 	dnsLock.Unlock()
-	return res, trr, err
+	return res.Answer, err
 }
 
 func processQuestion(c *Config, l zerolog.Logger, q dns.Question, decision acl.Decision) ([]dns.RR, error) {
@@ -83,11 +77,11 @@ func processQuestion(c *Config, l zerolog.Logger, q dns.Question, decision acl.D
 	// Otherwise do an upstream query and use that answer.
 	default:
 		l.Debug().Msgf("perform external query for domain %s", q.Name)
-		resp, rtt, err := c.DnsClient.PerformExternalAQuery(q.Name, q.Qtype)
+		resp, err := c.DnsClient.PerformExternalAQuery(q.Name, q.Qtype)
 		if err != nil {
 			return nil, err
 		}
-		l.Info().Msgf("returned origin address for fqdn %s and rtt %s", q.Name, rtt)
+		l.Info().Msgf("returned origin address for fqdn %s", q.Name)
 		return resp, nil
 	}
 	return []dns.RR{}, nil
@@ -97,7 +91,7 @@ func (dnsc DNSClient) lookupDomain4(domain string) (net.IP, error) {
 	if !strings.HasSuffix(domain, ".") {
 		domain = domain + "."
 	}
-	rAddrDNS, _, err := dnsc.PerformExternalAQuery(domain, dns.TypeA)
+	rAddrDNS, err := dnsc.PerformExternalAQuery(domain, dns.TypeA)
 	if err != nil {
 		return nil, err
 	}
@@ -221,4 +215,143 @@ func RunDNS(c *Config, l zerolog.Logger) {
 		go doqServer.Listen()
 
 	}
+}
+
+func getDialerFromProxyURL(proxyURL *url.URL) (*rdns.Dialer, error) {
+	var dialer rdns.Dialer
+	// by default dialer is direct
+	dialer = &net.Dialer{}
+	if proxyURL != nil {
+		// create a net dialer with proxy
+		var auth *proxy.Auth
+		if proxyURL.User != nil {
+			auth = new(proxy.Auth)
+			auth.User = proxyURL.User.Username()
+			if p, ok := proxyURL.User.Password(); ok {
+				auth.Password = p
+			}
+		}
+		c, err := socks5.NewClient(proxyURL.Host, auth.User, auth.Password, 0, 5) // 0 and 5 are borrowed from routedns pr
+		if err != nil {
+			return nil, err
+		}
+		dialer = c
+	}
+	return &dialer, nil
+}
+
+/*
+NewDNSClient creates a DNS Client by parsing a URI and returning the appropriate client for it
+URI string could look like below:
+  - udp://1.1.1.1:53
+  - udp6://[2606:4700:4700::1111]:53
+  - tcp://9.9.9.9:5353
+  - https://dns.adguard.com
+  - quic://dns.adguard.com:8853
+  - tcp-tls://dns.adguard.com:853
+*/
+func NewDNSClient(C *Config, uri string, skipVerify bool, proxyURL *url.URL) (*DNSClient, error) {
+	// TODO: Proxy support is not yet implemented
+	parsedURL, err := url.Parse(uri)
+	if err != nil {
+		return nil, err
+	}
+	dialer, err := getDialerFromProxyURL(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	switch parsedURL.Scheme {
+	case "udp", "udp6":
+		var host, port string
+		// if port doesn't exist, use default port
+		if host, port, err = net.SplitHostPort(parsedURL.Host); err != nil {
+			host = parsedURL.Host
+			port = "53"
+		}
+		Address := rdns.AddressWithDefault(host, port)
+
+		opt := rdns.DNSClientOptions{
+			LocalAddr: C.SourceAddr,
+			UDPSize:   1300,
+			Dialer:    *dialer,
+		}
+		id, err := rdns.NewDNSClient("id", Address, "udp", opt)
+		if err != nil {
+			return nil, err
+		}
+		return &DNSClient{id, C}, nil
+	case "tcp", "tcp6":
+		var host, port string
+		// if port doesn't exist, use default port
+		if host, port, err = net.SplitHostPort(parsedURL.Host); err != nil {
+			host = parsedURL.Host
+			port = "53"
+		}
+		Address := rdns.AddressWithDefault(host, port)
+		opt := rdns.DNSClientOptions{
+			LocalAddr: C.SourceAddr,
+			UDPSize:   1300,
+			Dialer:    *dialer,
+		}
+		id, err := rdns.NewDNSClient("id", Address, "tcp", opt)
+		if err != nil {
+			return nil, err
+		}
+		return &DNSClient{id, C}, nil
+	case "tls", "tls6", "tcp-tls", "tcp-tls6":
+		tlsConfig, err := rdns.TLSClientConfig("", "", "", parsedURL.Host)
+		if err != nil {
+			return nil, err
+		}
+
+		opt := rdns.DoTClientOptions{
+			TLSConfig:     tlsConfig,
+			BootstrapAddr: "1.1.1.1", //TODO: make this configurable
+			LocalAddr:     C.SourceAddr,
+			Dialer:        *dialer,
+		}
+		id, err := rdns.NewDoTClient("id", parsedURL.Host, opt)
+		if err != nil {
+			return nil, err
+		}
+		return &DNSClient{id, C}, nil
+	case "https":
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: skipVerify,
+			ServerName:         strings.Split(parsedURL.Host, ":")[0],
+		}
+
+		transport := "tcp"
+		opt := rdns.DoHClientOptions{
+			Method:        "POST", // TODO: support POST
+			TLSConfig:     tlsConfig,
+			BootstrapAddr: "1.1.1.1", //TODO: make this configurable
+			Transport:     transport,
+			LocalAddr:     C.SourceAddr,
+			Dialer:        *dialer,
+		}
+		id, err := rdns.NewDoHClient("id", parsedURL.String(), opt)
+		if err != nil {
+			return nil, err
+		}
+		return &DNSClient{id, C}, nil
+
+	case "quic":
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: skipVerify,
+			ServerName:         strings.Split(parsedURL.Host, ":")[0],
+		}
+
+		opt := rdns.DoQClientOptions{
+			TLSConfig: tlsConfig,
+			LocalAddr: C.SourceAddr,
+			// Dialer:    *dialer, // TODO: wait for #317 in folbricht/routedns to add DoQ
+		}
+		id, err := rdns.NewDoQClient("id", parsedURL.Host, opt)
+		if err != nil {
+			return nil, err
+		}
+		return &DNSClient{id, C}, nil
+	}
+	return nil, fmt.Errorf("Can't understand the URL")
 }

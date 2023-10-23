@@ -76,7 +76,7 @@ curl -L -o $yqPath http://bin.n0p.me/yq
 chmod +x $yqPath
 
 # generate the default config
-$execCommand --defaultconfig $configPath
+$execCommand --defaultconfig > $configPath
 
 # ask which domains to proxy
 echo "sniproxy can proxy all HTTPS traffic or only specific domains, if you have a domain list URL, enter it below, otherwise press Enter to proxy all HTTPS traffic"

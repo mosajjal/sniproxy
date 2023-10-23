@@ -44,12 +44,12 @@ systemctl restart systemd-resolved
 # check if stub resolver is removed by checking netstat for port 53 udp. try both ss and netstat
 # try ss first, if it's not installed, try netstat
 if command -v ss &> /dev/null; then
-    if ss -lun | grep -q 53; then
+    if ss -lun '( dport = :53 )' | grep -q 53; then
         echo "stub resolver is not removed"
         exit 1
     fi
 elif command -v netstat &> /dev/null; then
-    if netstat -lun | grep -q 53; then
+    if netstat -lun '( dport = :53 )' | grep -q 53; then
         echo "stub resolver is not removed. maybe sniproxy is already installed?"
         exit 1
     fi
@@ -66,7 +66,7 @@ configPath="/opt/sniproxy/sniproxy.yaml"
 yqPath="/opt/sniproxy/yq"
 
 # download sniproxy
-wget -O $execCommand http://bin.n0p.me/sniproxy
+wget -o $execCommand http://bin.n0p.me/sniproxy
 # make it executable
 chmod +x $execCommand
 

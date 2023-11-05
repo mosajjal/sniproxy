@@ -20,38 +20,38 @@ acl:
   domain:
     enabled: true
     priority: 20
-    path: ../domains.csv
+    path: ../../domains.csv
     refresh_interval: 1h0m0s`,
 	"acl_cidr.yaml": `
 acl:
   cidr:
     enabled: true
     priority: 30
-    path: ../cidr.csv
+    path: ../../cidr.csv
     refresh_interval: 1h0m0s`,
 	"acl_domain_cidr.yaml": `
 acl:
   domain:
     enabled: true
     priority: 20
-    path: ../domains.csv
+    path: ../../domains.csv
     refresh_interval: 1h0m0s
   cidr:
     enabled: true
     priority: 30
-    path: ../cidr.csv
+    path: ../../cidr.csv
     refresh_interval: 1h0m0s`,
 	"acl_cidr_domain.yaml": `
 acl:
   domain:
     enabled: true
     priority: 20
-    path: ../domains.csv
+    path: ../../domains.csv
     refresh_interval: 1h0m0s
   cidr:
     enabled: true
     priority: 19
-    path: ../cidr.csv
+    path: ../../cidr.csv
     refresh_interval: 1h0m0s`,
 }
 

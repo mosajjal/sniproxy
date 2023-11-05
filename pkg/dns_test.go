@@ -3,18 +3,18 @@ package sniproxy
 import (
 	"net"
 	"testing"
-
-	"github.com/mosajjal/dnsclient"
 )
 
 func TestDNSClient_lookupDomain4(t *testing.T) {
-	tmp, err := dnsclient.New("udp://1.1.1.1:53", true, "")
+	c := Config{
+		UpstreamDNS: "tcp://1.1.1.1:53",
+	}
+	dnsc, err := NewDNSClient(&c, c.UpstreamDNS, true, "")
 	if err != nil {
 		t.Errorf("failed to set up DNS client")
 	}
-	dnsc := DNSClient{tmp, nil}
 	tests := []struct {
-		client  DNSClient
+		client  *DNSClient
 		name    string
 		domain  string
 		want    net.IP

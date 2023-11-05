@@ -221,7 +221,7 @@ func getDialerFromProxyURL(proxyURL *url.URL) (*rdns.Dialer, error) {
 	var dialer rdns.Dialer
 	// by default dialer is direct
 	dialer = &net.Dialer{}
-	if proxyURL != nil {
+	if proxyURL != nil && proxyURL.Host != "" {
 		// create a net dialer with proxy
 		var auth *proxy.Auth
 		if proxyURL.User != nil {
@@ -250,16 +250,22 @@ URI string could look like below:
   - quic://dns.adguard.com:8853
   - tcp-tls://dns.adguard.com:853
 */
-func NewDNSClient(C *Config, uri string, skipVerify bool, proxyURL *url.URL) (*DNSClient, error) {
-	// TODO: Proxy support is not yet implemented
+func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSClient, error) {
 	parsedURL, err := url.Parse(uri)
 	if err != nil {
 		return nil, err
 	}
-	dialer, err := getDialerFromProxyURL(proxyURL)
+
+	var dialer *rdns.Dialer
+	proxyURL, err := url.Parse(proxy)
 	if err != nil {
 		return nil, err
 	}
+	dialer, err = getDialerFromProxyURL(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+
 	switch parsedURL.Scheme {
 	case "udp", "udp6":
 		var host, port string
@@ -345,7 +351,7 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxyURL *url.URL) (*D
 		opt := rdns.DoQClientOptions{
 			TLSConfig: tlsConfig,
 			LocalAddr: C.SourceAddr,
-			// Dialer:    *dialer, // TODO: wait for #317 in folbricht/routedns to add DoQ
+			// Dialer:    *dialer, // BUG: not yet supported
 		}
 		id, err := rdns.NewDoQClient("id", parsedURL.Host, opt)
 		if err != nil {

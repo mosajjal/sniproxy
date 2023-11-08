@@ -22,7 +22,6 @@ _testmain.go
 *.exe
 *.test
 *.prof
-sniproxy
 config.yaml
 
 .TODO.md

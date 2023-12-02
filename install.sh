@@ -92,7 +92,7 @@ echo "Do you want to enable DNS over TCP? (y/n)"
 read dnsOverTCP
 # if yes, add --bindDnsOverTcp argument to sniproxy execute command
 if [ "$dnsOverTCP" = "y" ]; then
-    $yqPath -i '.general.bind_dns_over_tcp = 0.0.0.0:53' $configPath
+    $yqPath -i '.general.bind_dns_over_tcp = "0.0.0.0:53"' $configPath
 fi
 
 # ask if DNS over TLS should be enabled
@@ -100,7 +100,7 @@ echo "Do you want to enable DNS over TLS? (y/n)"
 read dnsOverTLS
 # if yes, add --bindDnsOverTls argument to sniproxy execute command
 if [ "$dnsOverTLS" = "y" ]; then
-    $yqPath -i '.general.bind_dns_over_tls = 0.0.0.0:853' $configPath
+    $yqPath -i '.general.bind_dns_over_tls = "0.0.0.0:853"' $configPath
 fi
 
 # ask for DNS over QUIC
@@ -108,7 +108,7 @@ echo "Do you want to enable DNS over QUIC? (y/n)"
 read dnsOverQUIC
 # if yes, add --bindDnsOverQuic argument to sniproxy execute command
 if [ "$dnsOverQUIC" = "y" ]; then
-    $yqPath -i '.general.bind_dns_over_quic = 0.0.0.0:8853' $configPath
+    $yqPath -i '.general.bind_dns_over_quic = "0.0.0.0:8853"' $configPath
 fi
 
 # if any of DNS over TLS or DNS over QUIC is enabled, ask for the certificate path and key path

@@ -122,7 +122,7 @@ if [ "$dnsOverTLS" = "y" ] || [ "$dnsOverQUIC" = "y" ]; then
     if [ -z "$certPath" ] || [ -z "$keyPath" ]; then
         echo "WARNING: Using self-signed certificates"
     else
-        $yqPath -i '.general.tls_cert = '"$certPath"', .general.tls_key = '"$keyPath" $configPath
+        $yqPath -i '.general.tls_cert = "$certPath", .general.tls_key = "$keyPath"' $configPath
     fi
 fi
 

@@ -28,8 +28,13 @@ fi
 # prompt before removing stub resolver
 echo "This script will remove the stub resolver from /etc/resolv.conf"
 echo "and replace it with 9.9.9.9"
-echo "Press Ctrl-C to abort or Enter to continue"
-read
+echo "Press Ctrl-C to abort or Enter to replace the DNS server with 9.9.9.9, otherwise enter your preffered DNS server and press Enter"
+read dnsServer
+
+# if dnsServer is empty, replace it with 9.9.9.9
+if [ -z "$dnsServer" ]; then
+    dnsServer="9.9.9.9"
+fi
 
 # check to see if sed is installed
 if ! command -v sed &> /dev/null; then
@@ -38,7 +43,7 @@ if ! command -v sed &> /dev/null; then
 fi
 
 # remove stub resolver
-sed -i 's/#DNS=/DNS=9.9.9.9/; s/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
+sed -i 's/#DNS=/DNS='$dnsServer'/; s/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
 systemctl restart systemd-resolved
 
 # check if stub resolver is removed by checking netstat for port 53 udp. try both ss and netstat

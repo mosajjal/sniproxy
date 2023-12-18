@@ -10,7 +10,6 @@ require (
 	github.com/knadh/koanf v1.5.0
 	github.com/m13253/dns-over-https/v2 v2.3.4
 	github.com/miekg/dns v1.1.56
-	github.com/mosajjal/dnsclient v0.1.1-0.20230911082442-7397830144e8
 	github.com/mosajjal/doqd v0.0.0-20230911082614-66fb2db2687f
 	github.com/oschwald/maxminddb-golang v1.12.0
 	github.com/prometheus/client_golang v1.17.0
@@ -59,10 +58,10 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/txthinking/runnergroup v0.0.0-20230325130830-408dc5853f86 // indirect
 	go.uber.org/mock v0.3.0 // indirect
-	golang.org/x/crypto v0.14.0 // indirect
+	golang.org/x/crypto v0.17.0 // indirect
 	golang.org/x/mod v0.13.0 // indirect
-	golang.org/x/sys v0.13.0 // indirect
-	golang.org/x/text v0.13.0 // indirect
+	golang.org/x/sys v0.15.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/tools v0.14.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

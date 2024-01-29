@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -221,6 +222,8 @@ func main() {
 	c.BindPrometheus = generalConfig.String("prometheus")
 	c.AllowConnToLocal = generalConfig.Bool("allow_conn_to_local")
 
+	c.PreferredVersion = uint(generalConfig.Int("preferred_version"))
+
 	var err error
 	c.Acl, err = acl.StartACLs(&logger, k)
 	if err != nil {
@@ -284,8 +287,10 @@ func main() {
 		if err != nil {
 			logger.Error().Msg(err.Error())
 		}
-		c.SourceAddr = net.ParseIP(addrs[0].String())
-
+		// TODO: split ipv4 and ipv6 to different lists
+		for _, addr := range addrs {
+			c.SourceAddr = append(c.SourceAddr, netip.MustParseAddr(addr.String()))
+		}
 	}
 
 	if c.UpstreamSOCKS5 != "" {

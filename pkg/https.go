@@ -3,11 +3,32 @@ package sniproxy
 import (
 	"fmt"
 	"net"
+	"net/netip"
 
 	"github.com/mosajjal/sniproxy/v2/pkg/acl"
 	"github.com/rs/zerolog"
 	"golang.org/x/net/proxy"
 )
+
+// checks if the IP is the sniproxy itself
+func isSelf(c *Config, ip netip.Addr) bool {
+	condition1 := ip.IsLoopback() ||
+		ip.IsPrivate() ||
+		ip == (netip.IPv4Unspecified()) ||
+		ip == netip.MustParseAddr(c.PublicIPv4) ||
+		ip == netip.MustParseAddr(c.PublicIPv6)
+
+	if condition1 {
+		return true
+	}
+
+	for _, v := range c.SourceAddr {
+		if ip == v {
+			return true
+		}
+	}
+	return false
+}
 
 func handle443(c *Config, conn net.Conn, httpslog zerolog.Logger) error {
 	c.RecievedHTTPS.Inc(1)
@@ -41,33 +62,34 @@ func handle443(c *Config, conn net.Conn, httpslog zerolog.Logger) error {
 		conn.Close()
 		return nil
 	}
-	rPort := 443
+	rPort := 443 //TODO: make sure sniproxy works with all ports
 	var rAddr net.IP
 	if connInfo.Decision == acl.Override {
 		httpslog.Debug().Msgf("overriding destination IP %s with %s as per override ACL", rAddr.String(), connInfo.DstIP.String())
 		rAddr = connInfo.DstIP.IP
 		rPort = connInfo.DstIP.Port
 	} else {
-		rAddr, err = c.DnsClient.lookupDomain4(sni)
+		// TODO: lookup needs to be both ipv4 and ipv6
+		rAddrTmp, err := c.DnsClient.lookupDomain(sni, c.PreferredVersion)
 		if err != nil || rAddr == nil {
 			httpslog.Warn().Msg(err.Error())
 			return err
 		}
 		// TODO: handle timeout and context here
-		if rAddr.IsLoopback() || (rAddr.IsPrivate() && !c.AllowConnToLocal) || rAddr.Equal(net.IPv4(0, 0, 0, 0)) || rAddr.Equal(net.IP(c.PublicIPv4)) || rAddr.Equal(net.IP(c.SourceAddr)) || rAddr.Equal(net.IP(c.PublicIPv6)) {
+		if isSelf(c, rAddrTmp) && !c.AllowConnToLocal {
 			httpslog.Info().Msg("connection to private IP or self ignored")
 			return nil
 		}
+		rAddr = rAddrTmp.AsSlice()
 	}
 
 	httpslog.Debug().Str("sni", sni).Str("srcip", conn.RemoteAddr().String()).Str("dstip", rAddr.String()).Msg("connection request accepted")
-	// var target *net.TCPConn
 	var target net.Conn
 	// if the proxy is not set, or the destination IP is localhost, we'll use the OS's TCP stack and won't go through the SOCKS5 proxy
 	if c.Dialer == proxy.Direct || rAddr.IsLoopback() {
 		// with the manipulation of the soruce address, we can set the outbound interface
 		srcAddr := net.TCPAddr{
-			IP:   c.SourceAddr,
+			IP:   c.pickSrcAddr(c.PreferredVersion),
 			Port: 0,
 		}
 		target, err = net.DialTCP("tcp", &srcAddr, &net.TCPAddr{IP: rAddr, Port: rPort})

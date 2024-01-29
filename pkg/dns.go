@@ -3,7 +3,9 @@ package sniproxy
 import (
 	"crypto/tls"
 	"fmt"
+	"math/rand"
 	"net"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -26,6 +28,33 @@ type DNSClient struct {
 }
 
 var dnsLock sync.RWMutex
+
+// pickSrcAddr picks a random source address from the list of configured source addresses.
+// version specifies the IP version to pick, 4 or 6. If 0, any version is picked.
+func (c *Config) pickSrcAddr(version uint) net.IP {
+	if len(c.SourceAddr) == 0 {
+		return nil
+	}
+	if version == 0 {
+		version = uint(rand.Intn(2) + 4)
+	}
+
+	// shuffle the list of source addresses. TODO: potentially a better way to do this
+	for i := range c.SourceAddr {
+		j := rand.Intn(i + 1)
+		c.SourceAddr[i], c.SourceAddr[j] = c.SourceAddr[j], c.SourceAddr[i]
+	}
+
+	for _, ip := range c.SourceAddr {
+		if ip.Is4() && version == 4 {
+			return ip.AsSlice()
+		}
+		if ip.Is6() && version == 6 {
+			return ip.AsSlice()
+		}
+	}
+	return nil
+}
 
 func (dnsc *DNSClient) PerformExternalAQuery(fqdn string, QType uint16) ([]dns.RR, error) {
 	if !strings.HasSuffix(fqdn, ".") {
@@ -87,26 +116,62 @@ func processQuestion(c *Config, l zerolog.Logger, q dns.Question, decision acl.D
 	return []dns.RR{}, nil
 }
 
-func (dnsc DNSClient) lookupDomain4(domain string) (net.IP, error) {
+// lookupDomain looks up a domain name and returns the IP address.
+// version specifies the IP version to lookup, 4 or 6. If 0, any version is picked.
+func (dnsc DNSClient) lookupDomain(domain string, version uint) (netip.Addr, error) {
+	if version == 0 {
+		version = uint(rand.Intn(2) + 4)
+	}
+	if version == 4 {
+		return dnsc.lookupDomain4(domain)
+	}
+	if version == 6 {
+		return dnsc.lookupDomain6(domain)
+	}
+	return netip.IPv4Unspecified(), fmt.Errorf("invalid version")
+}
+
+func (dnsc DNSClient) lookupDomain4(domain string) (netip.Addr, error) {
 	if !strings.HasSuffix(domain, ".") {
 		domain = domain + "."
 	}
 	rAddrDNS, err := dnsc.PerformExternalAQuery(domain, dns.TypeA)
 	if err != nil {
-		return nil, err
+		return netip.IPv4Unspecified(), err
 	}
 	if len(rAddrDNS) > 0 {
 		if rAddrDNS[0].Header().Rrtype == dns.TypeCNAME {
 			return dnsc.lookupDomain4(rAddrDNS[0].(*dns.CNAME).Target)
 		}
 		if rAddrDNS[0].Header().Rrtype == dns.TypeA {
-			return rAddrDNS[0].(*dns.A).A, nil
+			return netip.AddrFrom4([4]byte(rAddrDNS[0].(*dns.A).A.To4())), nil
 		}
 	} else {
-		return nil, fmt.Errorf("[DNS] Empty DNS response for %s", domain)
+		return netip.IPv4Unspecified(), fmt.Errorf("[DNS] Empty DNS response for %s", domain)
 	}
-	return nil, fmt.Errorf("[DNS] Unknown type %s", dns.TypeToString[rAddrDNS[0].Header().Rrtype])
+	return netip.IPv4Unspecified(), fmt.Errorf("[DNS] Unknown type %s", dns.TypeToString[rAddrDNS[0].Header().Rrtype])
 }
+func (dnsc DNSClient) lookupDomain6(domain string) (netip.Addr, error) {
+	if !strings.HasSuffix(domain, ".") {
+		domain = domain + "."
+	}
+	rAddrDNS, err := dnsc.PerformExternalAQuery(domain, dns.TypeAAAA)
+	if err != nil {
+		return netip.IPv6Unspecified(), err
+	}
+	if len(rAddrDNS) > 0 {
+		if rAddrDNS[0].Header().Header().Rrtype == dns.TypeCNAME {
+			return dnsc.lookupDomain6(rAddrDNS[0].(*dns.CNAME).Target)
+		}
+		if rAddrDNS[0].Header().Rrtype == dns.TypeAAAA {
+			return netip.AddrFrom16([16]byte(rAddrDNS[0].(*dns.AAAA).AAAA.To16())), nil
+		}
+	} else {
+		return netip.IPv6Unspecified(), fmt.Errorf("[DNS] Empty DNS response for %s", domain)
+	}
+	return netip.IPv6Unspecified(), fmt.Errorf("[DNS] Unknown type %s", dns.TypeToString[rAddrDNS[0].Header().Rrtype])
+}
+
 func handleDNS(c *Config, l zerolog.Logger) dns.HandlerFunc {
 	return func(w dns.ResponseWriter, r *dns.Msg) {
 		m := new(dns.Msg)
@@ -276,8 +341,15 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 		}
 		Address := rdns.AddressWithDefault(host, port)
 
+		var ldarr net.IP
+		if parsedURL.Scheme == "udp6" {
+			ldarr = C.pickSrcAddr(6)
+		} else {
+			ldarr = C.pickSrcAddr(4)
+		}
+
 		opt := rdns.DNSClientOptions{
-			LocalAddr: C.SourceAddr,
+			LocalAddr: ldarr,
 			UDPSize:   1300,
 			Dialer:    *dialer,
 		}
@@ -293,9 +365,17 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 			host = parsedURL.Host
 			port = "53"
 		}
+
+		var ldarr net.IP
+		if parsedURL.Scheme == "tcp6" {
+			ldarr = C.pickSrcAddr(6)
+		} else {
+			ldarr = C.pickSrcAddr(4)
+		}
+
 		Address := rdns.AddressWithDefault(host, port)
 		opt := rdns.DNSClientOptions{
-			LocalAddr: C.SourceAddr,
+			LocalAddr: ldarr,
 			UDPSize:   1300,
 			Dialer:    *dialer,
 		}
@@ -309,11 +389,19 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 		if err != nil {
 			return nil, err
 		}
+		var ldarr net.IP
+		bootstrapAddr := "1.1.1.1"
+		if parsedURL.Scheme == "tls6" || parsedURL.Scheme == "tcp-tls6" {
+			ldarr = C.pickSrcAddr(6)
+			bootstrapAddr = "2606:4700:4700::1111"
+		} else {
+			ldarr = C.pickSrcAddr(4)
+		}
 
 		opt := rdns.DoTClientOptions{
 			TLSConfig:     tlsConfig,
-			BootstrapAddr: "1.1.1.1", //TODO: make this configurable
-			LocalAddr:     C.SourceAddr,
+			BootstrapAddr: bootstrapAddr, //TODO: make this configurable
+			LocalAddr:     ldarr,
 			Dialer:        *dialer,
 		}
 		id, err := rdns.NewDoTClient("id", parsedURL.Host, opt)
@@ -329,11 +417,11 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 
 		transport := "tcp"
 		opt := rdns.DoHClientOptions{
-			Method:        "POST", // TODO: support POST
+			Method:        "POST", // TODO: support anything other than POST
 			TLSConfig:     tlsConfig,
 			BootstrapAddr: "1.1.1.1", //TODO: make this configurable
 			Transport:     transport,
-			LocalAddr:     C.SourceAddr,
+			LocalAddr:     C.pickSrcAddr(4), //TODO:support IPv6
 			Dialer:        *dialer,
 		}
 		id, err := rdns.NewDoHClient("id", parsedURL.String(), opt)
@@ -350,7 +438,7 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 
 		opt := rdns.DoQClientOptions{
 			TLSConfig: tlsConfig,
-			LocalAddr: C.SourceAddr,
+			LocalAddr: C.pickSrcAddr(4), //TODO:support IPv6
 			// Dialer:    *dialer, // BUG: not yet supported
 		}
 		id, err := rdns.NewDoQClient("id", parsedURL.Host, opt)

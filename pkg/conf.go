@@ -1,7 +1,7 @@
 package sniproxy
 
 import (
-	"net"
+	"net/netip"
 
 	"github.com/mosajjal/sniproxy/v2/pkg/acl"
 	"github.com/rcrowley/go-metrics"
@@ -28,9 +28,11 @@ type Config struct {
 
 	Acl []acl.ACL `yaml:"-"`
 
-	DnsClient  DNSClient    `yaml:"-"`
-	Dialer     proxy.Dialer `yaml:"-"`
-	SourceAddr net.IP       `yaml:"-"`
+	DnsClient DNSClient    `yaml:"-"`
+	Dialer    proxy.Dialer `yaml:"-"`
+	// list of interface source IPs; used to rotate source IPs when initializing connections
+	SourceAddr       []netip.Addr `yaml:"-"`
+	PreferredVersion uint         `yaml:"preferred_version"` // "4" or "6" for outbound connections
 
 	// metrics
 	RecievedHTTP  metrics.Counter `yaml:"-"`

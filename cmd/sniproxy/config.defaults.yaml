@@ -31,6 +31,8 @@ general:
   bind_prometheus:
   # Interface used for outbound TLS connections. uses OS prefered one if empty
   interface:
+  # Preferred ip version for outgoing connections. default is 0 (random choice)
+  prefered_version:
   # Public IPv4 of the server, reply address of DNS A queries
   public_ipv4:
   # Public IPv6 of the server, reply address of DNS AAAA queries

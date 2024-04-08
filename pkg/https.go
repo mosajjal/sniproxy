@@ -71,7 +71,7 @@ func handle443(c *Config, conn net.Conn, httpslog zerolog.Logger) error {
 	} else {
 		// TODO: lookup needs to be both ipv4 and ipv6
 		rAddrTmp, err := c.DnsClient.lookupDomain(sni, c.PreferredVersion)
-		if err != nil || rAddr == nil {
+		if err != nil {
 			httpslog.Warn().Msg(err.Error())
 			return err
 		}

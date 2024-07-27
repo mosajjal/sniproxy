@@ -71,6 +71,9 @@ func (dnsc *DNSClient) PerformExternalAQuery(fqdn string, QType uint16) ([]dns.R
 	}
 	res, err := dnsc.Resolve(&msg, rdns.ClientInfo{})
 	dnsLock.Unlock()
+	if res == nil {
+		return nil, err
+	}
 	return res.Answer, err
 }
 

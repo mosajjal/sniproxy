@@ -123,7 +123,7 @@ func processQuestion(c *Config, l zerolog.Logger, q dns.Question, decision acl.D
 // version specifies the IP version to lookup, 4 or 6. If 0, any version is picked.
 func (dnsc DNSClient) lookupDomain(domain string, version uint) (netip.Addr, error) {
 	if version == 0 {
-		version = uint(rand.Intn(2) + 4)
+		version = uint(rand.Intn(2)*2 + 4)
 	}
 	if version == 4 {
 		return dnsc.lookupDomain4(domain)

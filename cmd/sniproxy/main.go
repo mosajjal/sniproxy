@@ -219,6 +219,10 @@ func main() {
 	if c.PublicIPv6 == "" {
 		c.PublicIPv6, _ = getPublicIPv6()
 	}
+	if c.PublicIPv4 == "" && c.PublicIPv6 == "" {
+		logger.Error().Msg("Could not automatically determine public IP. you should provide it manually using --publicIPv4 and --publicIPv6")
+		return
+	}
 	c.BindPrometheus = generalConfig.String("prometheus")
 	c.AllowConnToLocal = generalConfig.Bool("allow_conn_to_local")
 

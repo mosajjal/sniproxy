@@ -14,11 +14,14 @@ import (
 // checks if the IP is the sniproxy itself
 func isSelf(c *Config, ip netip.Addr) bool {
 	condition1 := ip.IsLoopback() ||
-		ip.IsPrivate() ||
-		ip == (netip.IPv4Unspecified()) ||
-		ip == netip.MustParseAddr(c.PublicIPv4) ||
-		ip == netip.MustParseAddr(c.PublicIPv6)
+		ip.IsPrivate() || ip == (netip.IPv4Unspecified())
 
+	if c.PublicIPv4 != "" {
+		condition1 = condition1 || (ip == netip.MustParseAddr(c.PublicIPv4))
+	}
+	if c.PublicIPv6 != "" {
+		condition1 = condition1 || (ip == netip.MustParseAddr(c.PublicIPv6))
+	}
 	if condition1 {
 		return true
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"strconv"
 
 	"github.com/mosajjal/sniproxy/v2/pkg/acl"
 	"github.com/rs/zerolog"
@@ -30,17 +31,18 @@ func isSelf(c *Config, ip netip.Addr) bool {
 	return false
 }
 
-func handle443(c *Config, conn net.Conn, httpslog zerolog.Logger) error {
+// handleTLS handles the incoming TLS connection
+func handleTLS(c *Config, conn net.Conn, httpslog zerolog.Logger) error {
 	c.RecievedHTTPS.Inc(1)
 
 	defer conn.Close()
-	incoming := make([]byte, 2048)
+	incoming := make([]byte, 2048) // 2048 should be enough for a TLS Client Hello packet. But it could become problematic if tcp connection is fragmented or too big
 	n, err := conn.Read(incoming)
 	if err != nil {
 		httpslog.Err(err)
 		return err
 	}
-	sni, err := GetHostname(incoming)
+	sni, err := GetHostname(incoming[:n])
 	if err != nil {
 		httpslog.Err(err)
 		return err
@@ -62,7 +64,7 @@ func handle443(c *Config, conn net.Conn, httpslog zerolog.Logger) error {
 		conn.Close()
 		return nil
 	}
-	rPort := 443 //TODO: make sure sniproxy works with all ports
+	rPort := getPortFromConn(conn) // by default, we'll use the listening port as the destination port
 	var rAddr net.IP
 	if connInfo.Decision == acl.Override {
 		httpslog.Debug().Msgf("overriding destination IP %s with %s as per override ACL", rAddr.String(), connInfo.DstIP.String())
@@ -153,18 +155,28 @@ func getChannel(conn net.Conn) chan []byte {
 	return c
 }
 
-func RunHTTPS(c *Config, log zerolog.Logger) {
-	l, err := net.Listen("tcp", c.BindHTTPS)
+func getPortFromConn(conn net.Conn) int {
+	_, port, _ := net.SplitHostPort(conn.LocalAddr().String())
+	// convert the port string to its int format
+	portnum, err := strconv.Atoi(port)
 	if err != nil {
-		log.Err(err)
-		panic(-1)
+		return 0
 	}
-	defer l.Close()
-	for {
-		con, err := l.Accept()
-		if err != nil {
-			log.Err(err)
+	return portnum
+}
+
+func RunHTTPS(c *Config, log zerolog.Logger) {
+	if l, err := net.Listen("tcp", c.BindHTTPS); err != nil {
+		log.Error().Msg(err.Error())
+		panic(-1)
+	} else {
+		defer l.Close()
+		for {
+			if con, err := l.Accept(); err != nil {
+				log.Error().Msg(err.Error())
+			} else {
+				go handleTLS(c, con, log)
+			}
 		}
-		go handle443(c, con, log)
 	}
 }

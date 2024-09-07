@@ -31,26 +31,45 @@ var dnsLock sync.RWMutex
 
 // pickSrcAddr picks a random source address from the list of configured source addresses.
 // version specifies the IP version to pick, 4 or 6. If 0, any version is picked.
-func (c *Config) pickSrcAddr(version uint) net.IP {
+func (c *Config) pickSrcAddr(version string) net.IP {
 	if len(c.SourceAddr) == 0 {
 		return nil
 	}
-	if version == 0 {
-		version = uint(rand.Intn(2) + 4)
-	}
-
 	// shuffle the list of source addresses. TODO: potentially a better way to do this
 	for i := range c.SourceAddr {
 		j := rand.Intn(i + 1)
 		c.SourceAddr[i], c.SourceAddr[j] = c.SourceAddr[j], c.SourceAddr[i]
 	}
-
-	for _, ip := range c.SourceAddr {
-		if ip.Is4() && version == 4 {
-			return ip.AsSlice()
+	switch version {
+	case "ipv4only":
+		for _, ip := range c.SourceAddr {
+			if ip.Is4() {
+				return ip.AsSlice()
+			}
 		}
-		if ip.Is6() && version == 6 {
-			return ip.AsSlice()
+	case "ipv6only":
+		for _, ip := range c.SourceAddr {
+			if ip.Is6() {
+				return ip.AsSlice()
+			}
+		}
+	case "ipv4", "4", "0":
+		for _, ip := range c.SourceAddr {
+			if ip.Is4() {
+				return ip.AsSlice()
+			}
+			if ip.Is6() {
+				return ip.AsSlice()
+			}
+		}
+	case "ipv6", "6":
+		for _, ip := range c.SourceAddr {
+			if ip.Is6() {
+				return ip.AsSlice()
+			}
+			if ip.Is4() {
+				return ip.AsSlice()
+			}
 		}
 	}
 	return nil
@@ -120,16 +139,29 @@ func processQuestion(c *Config, l zerolog.Logger, q dns.Question, decision acl.D
 }
 
 // lookupDomain looks up a domain name and returns the IP address.
-// version specifies the IP version to lookup, 4 or 6. If 0, any version is picked.
-func (dnsc DNSClient) lookupDomain(domain string, version uint) (netip.Addr, error) {
-	if version == 0 {
-		version = uint(rand.Intn(2)*2 + 4)
-	}
-	if version == 4 {
+// version specifies the IP version to lookup, 4 or 6. If 0, any version is picked. currently 0 is ipv4 with ipv6 fallback
+// options are: ipv4 (or 4) and ipv6 (or 6), ipv4only and ipv6only
+func (dnsc DNSClient) lookupDomain(domain string, version string) (netip.Addr, error) {
+
+	switch version {
+	case "ipv4only":
 		return dnsc.lookupDomain4(domain)
-	}
-	if version == 6 {
+	case "ipv6only":
 		return dnsc.lookupDomain6(domain)
+	case "ipv4", "4", "0":
+		// try with ipv4, if there's any error, try with ipv6
+		ip, err := dnsc.lookupDomain4(domain)
+		if err != nil {
+			return dnsc.lookupDomain6(domain)
+		}
+		return ip, nil
+	case "ipv6", "6":
+		// try with ipv6, if there's any error, try with ipv4
+		ip, err := dnsc.lookupDomain6(domain)
+		if err != nil {
+			return dnsc.lookupDomain4(domain)
+		}
+		return ip, nil
 	}
 	return netip.IPv4Unspecified(), fmt.Errorf("invalid version")
 }

@@ -242,8 +242,22 @@ func main() {
 		return
 	}
 
-	go sniproxy.RunHTTP(&c, logger.With().Str("service", "http").Logger())
-	go sniproxy.RunHTTPS(&c, logger.With().Str("service", "https").Logger())
+	// get a list of http and https binds
+	if err := c.SetBindHTTPListeners(logger); err != nil {
+		logger.Error().Msgf("error setting up HTTP listeners: %v", err)
+		return
+	}
+	if err := c.SetBindHTTPSListeners(logger); err != nil {
+		logger.Error().Msgf("error setting up HTTPS listeners: %v", err)
+		return
+	}
+
+	for _, addr := range c.BindHTTPListeners {
+		go sniproxy.RunHTTP(&c, addr, logger.With().Str("service", "http").Str("listener", addr).Logger())
+	}
+	for _, addr := range c.BindHTTPSListeners {
+		go sniproxy.RunHTTPS(&c, addr, logger.With().Str("service", "https").Str("listener", addr).Logger())
+	}
 	go sniproxy.RunDNS(&c, logger.With().Str("service", "dns").Logger())
 
 	// wait forever. TODO: add signal handling here

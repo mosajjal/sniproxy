@@ -38,14 +38,15 @@ var passthruResponseHeaderKeys = [...]string{
 	"Vary",
 }
 
-func RunHTTP(c *Config, l zerolog.Logger) {
+// RunHTTP starts the HTTP server on the configured bind. bind format is 0.0.0.0:80 or similar
+func RunHTTP(c *Config, bind string, l zerolog.Logger) {
 	httplog = l
 	handler := http.DefaultServeMux
 
 	handler.HandleFunc("/", handle80(c))
 
 	s := &http.Server{
-		Addr:           c.BindHTTP,
+		Addr:           bind,
 		Handler:        handler,
 		ReadTimeout:    10 * time.Second,
 		WriteTimeout:   10 * time.Second,

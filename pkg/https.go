@@ -165,8 +165,8 @@ func getPortFromConn(conn net.Conn) int {
 	return portnum
 }
 
-func RunHTTPS(c *Config, log zerolog.Logger) {
-	if l, err := net.Listen("tcp", c.BindHTTPS); err != nil {
+func RunHTTPS(c *Config, bind string, log zerolog.Logger) {
+	if l, err := net.Listen("tcp", bind); err != nil {
 		log.Error().Msg(err.Error())
 		panic(-1)
 	} else {

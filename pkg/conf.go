@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/netip"
 	"net/url"
+	"strconv"
+	"strings"
 
 	"github.com/mosajjal/sniproxy/v2/pkg/acl"
 	"github.com/rcrowley/go-metrics"
@@ -13,22 +15,26 @@ import (
 )
 
 type Config struct {
-	PublicIPv4            string `yaml:"public_ipv4"`
-	PublicIPv6            string `yaml:"public_ipv6"`
-	UpstreamDNS           string `yaml:"upstream_dns"`
-	UpstreamDNSOverSocks5 bool   `yaml:"upstream_dns_over_socks5"`
-	UpstreamSOCKS5        string `yaml:"upstream_socks5"`
-	BindDNSOverUDP        string `yaml:"bind_dns_over_udp"`
-	BindDNSOverTCP        string `yaml:"bind_dns_over_tcp"`
-	BindDNSOverTLS        string `yaml:"bind_dns_over_tls"`
-	BindDNSOverQuic       string `yaml:"bind_dns_over_quic"`
-	TLSCert               string `yaml:"tls_cert"`
-	TLSKey                string `yaml:"tls_key"`
-	BindHTTP              string `yaml:"bind_http"`
-	BindHTTPS             string `yaml:"bind_https"`
-	Interface             string `yaml:"interface"`
-	BindPrometheus        string `yaml:"bind_prometheus"`
-	AllowConnToLocal      bool   `yaml:"allow_conn_to_local"`
+	PublicIPv4            string   `yaml:"public_ipv4"`
+	PublicIPv6            string   `yaml:"public_ipv6"`
+	UpstreamDNS           string   `yaml:"upstream_dns"`
+	UpstreamDNSOverSocks5 bool     `yaml:"upstream_dns_over_socks5"`
+	UpstreamSOCKS5        string   `yaml:"upstream_socks5"`
+	BindDNSOverUDP        string   `yaml:"bind_dns_over_udp"`
+	BindDNSOverTCP        string   `yaml:"bind_dns_over_tcp"`
+	BindDNSOverTLS        string   `yaml:"bind_dns_over_tls"`
+	BindDNSOverQuic       string   `yaml:"bind_dns_over_quic"`
+	TLSCert               string   `yaml:"tls_cert"`
+	TLSKey                string   `yaml:"tls_key"`
+	BindHTTP              string   `yaml:"bind_http"`
+	BindHTTPAdditional    []string `yaml:"bind_http_additional"`
+	BindHTTPListeners     []string `yaml:"-"` // compiled list of bind_http and bind_http_additional listen addresses
+	BindHTTPS             string   `yaml:"bind_https"`
+	BindHTTPSAdditional   []string `yaml:"bind_https_additional"`
+	BindHTTPSListeners    []string `yaml:"-"` // compiled list of bind_https and bind_https_additional listen addresses
+	Interface             string   `yaml:"interface"`
+	BindPrometheus        string   `yaml:"bind_prometheus"`
+	AllowConnToLocal      bool     `yaml:"allow_conn_to_local"`
 
 	Acl []acl.ACL `yaml:"-"`
 
@@ -103,5 +109,82 @@ func (c *Config) SetDNSClient(logger zerolog.Logger) error {
 		}
 	}
 	c.DnsClient = *dnsClient
+	return nil
+}
+
+// parseRanges parses a range of ports or a single port. It returns a list of ports
+func parseRanges(portRange ...string) ([]int, error) {
+	var ports []int
+
+	for _, portRange := range portRange {
+
+		if strings.Index(portRange, "-") == -1 {
+			port, err := strconv.Atoi(portRange)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing port: %v", err)
+			}
+			ports = append(ports, port)
+		} else {
+			num1Str := strings.Split(portRange, "-")[0]
+			num2Str := strings.Split(portRange, "-")[1]
+			// convert both numbers to integers
+
+			num1, err := strconv.Atoi(num1Str)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing port range: %v", err)
+			}
+			num2, err := strconv.Atoi(num2Str)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing port range: %v", err)
+			}
+			for i := num1; i <= num2; i++ {
+				ports = append(ports, i)
+			}
+		}
+	}
+	return ports, nil
+}
+
+// parseBinders parses a bind address and a list of additional ports or port ranges
+func parseBinders(bind string, additional []string) ([]string, error) {
+	// get the bind address from bind
+	bindAddPort, err := netip.ParseAddrPort(bind)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing bind address: %v", err)
+	}
+	bindAddresses := []string{bindAddPort.String()}
+
+	// now all the ranges must be parsed, and each of them converted into a bind address and added to the list
+	portRange, err := parseRanges(additional...)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing bind address range: %v", err)
+	}
+	for _, port := range portRange {
+		bindAddresses = append(bindAddresses, fmt.Sprintf("%s:%d", bindAddPort.Addr, port))
+	}
+	return bindAddresses, nil
+}
+
+// SetBindHTTPListeners sets up a list of bind addresses for HTTP
+// it gets the bind address from bind_http as 0.0.0.0:80 format
+// and the additional bind addresses from bind_http_additional as a list of ports or port ranges
+// such as 8080, 8081-8083, 8085
+// when this function is called, it will compile the list of bind addresses and store it in BindHTTPListeners
+func (c *Config) SetBindHTTPListeners(logger zerolog.Logger) error {
+	bindAddresses, err := parseBinders(c.BindHTTP, c.BindHTTPAdditional)
+	if err != nil {
+		return fmt.Errorf("error parsing bind addresses for HTTP: %v", err)
+	}
+	c.BindHTTPListeners = bindAddresses
+	return nil
+}
+
+// SetBindHTTPSListeners sets up a list of bind addresses for HTTPS
+func (c *Config) SetBindHTTPSListeners(logger zerolog.Logger) error {
+	bindAddresses, err := parseBinders(c.BindHTTPS, c.BindHTTPSAdditional)
+	if err != nil {
+		return fmt.Errorf("error parsing bind addresses for HTTPS: %v", err)
+	}
+	c.BindHTTPSListeners = bindAddresses
 	return nil
 }

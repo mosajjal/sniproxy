@@ -126,7 +126,9 @@ func main() {
 	c.TLSCert = generalConfig.String("tls_cert")
 	c.TLSKey = generalConfig.String("tls_key")
 	c.BindHTTP = generalConfig.String("bind_http")
+	c.BindHTTPAdditional = generalConfig.Strings("bind_http_additional")
 	c.BindHTTPS = generalConfig.String("bind_https")
+	c.BindHTTPSAdditional = generalConfig.Strings("bind_https_additional")
 	c.Interface = generalConfig.String("interface")
 	c.PreferredVersion = generalConfig.String("preferred_version")
 
@@ -242,8 +244,24 @@ func main() {
 		return
 	}
 
-	go sniproxy.RunHTTP(&c, logger.With().Str("service", "http").Logger())
-	go sniproxy.RunHTTPS(&c, logger.With().Str("service", "https").Logger())
+	// get a list of http and https binds
+	if err := c.SetBindHTTPListeners(logger); err != nil {
+		logger.Error().Msgf("error setting up HTTP listeners: %v", err)
+		return
+	}
+	logger.Info().Msgf("HTTP listeners: %v", c.BindHTTPListeners)
+	if err := c.SetBindHTTPSListeners(logger); err != nil {
+		logger.Error().Msgf("error setting up HTTPS listeners: %v", err)
+		return
+	}
+	logger.Info().Msgf("HTTPS listeners: %v", c.BindHTTPSListeners)
+
+	for _, addr := range c.BindHTTPListeners {
+		go sniproxy.RunHTTP(&c, addr, logger.With().Str("service", "http").Str("listener", addr).Logger())
+	}
+	for _, addr := range c.BindHTTPSListeners {
+		go sniproxy.RunHTTPS(&c, addr, logger.With().Str("service", "https").Str("listener", addr).Logger())
+	}
 	go sniproxy.RunDNS(&c, logger.With().Str("service", "dns").Logger())
 
 	// wait forever. TODO: add signal handling here

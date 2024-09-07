@@ -17,11 +17,11 @@ func TestDNSClient_lookupDomain4(t *testing.T) {
 		client  *DNSClient
 		name    string
 		domain  string
-		want    net.IP
+		want    []net.IP
 		wantErr bool
 	}{
-		{client: dnsc, name: "test1", domain: "ident.me", want: net.IPv4(49, 12, 234, 183), wantErr: false},
-		{client: dnsc, name: "test1", domain: "ifconfig.me", want: net.IPv4(34, 117, 118, 44), wantErr: false},
+		{client: dnsc, name: "test1", domain: "ident.me", want: []net.IP{net.IPv4(49, 12, 234, 183)}, wantErr: false},
+		{client: dnsc, name: "test2", domain: "one.one.one.one", want: []net.IP{net.IPv4(1, 1, 1, 1), net.IPv4(1, 0, 0, 1)}, wantErr: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -31,8 +31,15 @@ func TestDNSClient_lookupDomain4(t *testing.T) {
 				t.Errorf("DNSClient.lookupDomain4() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !got.Equal(tt.want) {
-
+			// check if the returned IP is in the list of expected IPs
+			found := false
+			for _, w := range tt.want {
+				if got.Equal(w) {
+					found = true
+					break
+				}
+			}
+			if !found {
 				t.Errorf("DNSClient.lookupDomain4() = %v, want %v", got, tt.want)
 			}
 		})

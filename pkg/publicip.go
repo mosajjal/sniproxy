@@ -26,7 +26,7 @@ func GetPublicIPv4() (string, error) {
 	}
 	externalIP := ""
 	// trying to get the public IP from multiple sources to see if they match.
-	resp, err := http.Get("https://myexternalip.com/raw")
+	resp, err := http.Get("https://4.ident.me")
 	if err == nil {
 		defer resp.Body.Close()
 		body, err := io.ReadAll(resp.Body)

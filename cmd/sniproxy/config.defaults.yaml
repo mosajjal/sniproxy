@@ -6,6 +6,7 @@
 # note that there are 2 underscores between general and BIND_DNS_OVER_UDP
 general:
   # Upsteam DNS URI. examples: Upstream DNS URI. examples: udp://1.1.1.1:53, tcp://1.1.1.1:53, tcp-tls://1.1.1.1:853, https://dns.google/dns-query
+  # NOTE: if you're using SOCKS, avoid using UDP for upstream DNS
   upstream_dns: udp://8.8.8.8:53
   # enable send DNS through socks5
   upstream_dns_over_socks5: false
@@ -25,8 +26,12 @@ general:
   tls_key:
   # HTTP Port to listen on. Should remain 80 in most cases. use :80 to listen on both IPv4 and IPv6
   bind_http: "0.0.0.0:80"
+  # bind additional ports for HTTP. a list of portsor ranges separated by commas. example: "8080,8081-8083". follows the same listen address as bind_http
+  bind_http_additional: ["8080","8081-8083"]
   # HTTPS Port to listen on. Should remain 443 in most cases
   bind_https: "0.0.0.0:443"
+  # bind additional ports for HTTPS. a list of portsor ranges separated by commas. example: "8443,8444-8446". follows the same listen address as bind_https
+  bind_https_additional: ["8443","8444-8446"]
   # Enable prometheus endpoint on IP:PORT. example: 127.0.0.1:8080. Always exposes /metrics and only supports HTTP
   bind_prometheus:
   # Interface used for outbound TLS connections. uses OS prefered one if empty

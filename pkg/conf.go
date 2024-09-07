@@ -160,7 +160,7 @@ func parseBinders(bind string, additional []string) ([]string, error) {
 		return nil, fmt.Errorf("error parsing bind address range: %v", err)
 	}
 	for _, port := range portRange {
-		bindAddresses = append(bindAddresses, fmt.Sprintf("%s:%d", bindAddPort.Addr, port))
+		bindAddresses = append(bindAddresses, fmt.Sprintf("%s:%d", bindAddPort.Addr(), port))
 	}
 	return bindAddresses, nil
 }

@@ -170,6 +170,7 @@ func RunHTTPS(c *Config, bind string, log zerolog.Logger) {
 		log.Error().Msg(err.Error())
 		panic(-1)
 	} else {
+		log.Info().Msgf("listening https on %s", bind)
 		defer l.Close()
 		for {
 			if con, err := l.Accept(); err != nil {

@@ -41,7 +41,7 @@ var passthruResponseHeaderKeys = [...]string{
 // RunHTTP starts the HTTP server on the configured bind. bind format is 0.0.0.0:80 or similar
 func RunHTTP(c *Config, bind string, l zerolog.Logger) {
 	httplog = l
-	handler := http.DefaultServeMux
+	handler := http.NewServeMux()
 
 	handler.HandleFunc("/", handle80(c))
 
@@ -53,6 +53,7 @@ func RunHTTP(c *Config, bind string, l zerolog.Logger) {
 		MaxHeaderBytes: 1 << 20,
 	}
 
+	httplog.Info().Str("bind", bind).Msg("starting http server")
 	if err := s.ListenAndServe(); err != nil {
 		httplog.Error().Msg(err.Error())
 		panic(-1)

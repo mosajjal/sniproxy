@@ -29,7 +29,7 @@ const (
 // it also serves as an ACL enforcer in a sense that if IsRejected is set to true
 // the connection is dropped
 type ConnInfo struct {
-	SrcIP  net.Addr
+	SrcIP  net.Addr // this is more of a source socket than just IP.
 	DstIP  net.TCPAddr
 	Domain string
 	Decision

@@ -39,7 +39,7 @@ var passthruResponseHeaderKeys = [...]string{
 }
 
 func RunHTTP(c *Config, l zerolog.Logger) {
-	httplog = l.With().Str("service", "http").Logger()
+	httplog = l
 	handler := http.DefaultServeMux
 
 	handler.HandleFunc("/", handle80(c))
@@ -57,10 +57,13 @@ func RunHTTP(c *Config, l zerolog.Logger) {
 		panic(-1)
 	}
 }
+
 func handle80(c *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c.RecievedHTTP.Inc(1)
 
+		// BUG: this line does not take preferred DNS server or ipv4/ipv6 into account
+		// NOTE: currently, this line leaks DNS Queries to the underlying OS and the OS's default DNS resolver
 		addr, err := net.ResolveTCPAddr("tcp", r.RemoteAddr)
 
 		connInfo := acl.ConnInfo{
@@ -74,6 +77,7 @@ func handle80(c *Config) http.HandlerFunc {
 			return
 		}
 		// if the URL starts with the public IP, it needs to be skipped to avoid loops
+		// TODO: ipv6 should also be checked here
 		if strings.HasPrefix(r.Host, c.PublicIPv4) {
 			httplog.Warn().Msg("someone is requesting HTTP to sniproxy itself, ignoring...")
 			http.Error(w, "Could not reach origin server", 404)
@@ -111,6 +115,7 @@ func handle80(c *Config) http.HandlerFunc {
 		// 	return
 		// }
 
+		// setting up this dialer will enable to use the upstream SOCKS5 if configured
 		transport := http.Transport{
 			Dial: c.Dialer.Dial,
 		}

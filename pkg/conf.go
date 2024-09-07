@@ -93,19 +93,19 @@ func (c *Config) SetDNSClient(logger zerolog.Logger) error {
 	var dnsProxy string
 	var dnsClient *DNSClient
 	// if upstream socks5 is not provided or upstream dns over socks5 is disabled, disable socks5 for dns
-	if c.UpstreamSOCKS5 == "" || !c.UpstreamDNSOverSocks5 {
+	if c.UpstreamSOCKS5 != "" && !c.UpstreamDNSOverSocks5 {
 		logger.Debug().Msg("disabling socks5 for dns because either upstream socks5 is not provided or upstream dns over socks5 is disabled")
 		dnsProxy = ""
 	} else {
 		dnsProxy = c.UpstreamSOCKS5
-		var err error
-		dnsClient, err = NewDNSClient(c, c.UpstreamDNS, true, dnsProxy)
+	}
+	var err error
+	dnsClient, err = NewDNSClient(c, c.UpstreamDNS, true, dnsProxy)
+	if err != nil {
+		logger.Error().Msgf("error setting up dns client with socks5 proxy, falling back to direct DNS client: %v", err)
+		dnsClient, err = NewDNSClient(c, c.UpstreamDNS, false, "")
 		if err != nil {
-			logger.Error().Msgf("error setting up dns client with socks5 proxy, falling back to direct DNS client: %v", err)
-			dnsClient, err = NewDNSClient(c, c.UpstreamDNS, false, "")
-			if err != nil {
-				return fmt.Errorf("error setting up dns client: %v", err)
-			}
+			return fmt.Errorf("error setting up dns client: %v", err)
 		}
 	}
 	c.DnsClient = *dnsClient

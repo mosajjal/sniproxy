@@ -53,7 +53,7 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.59.1 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
-	github.com/quic-go/qpack v0.5.0 // indirect
+	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.46.0 // indirect
 	github.com/redis/go-redis/v9 v9.6.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect

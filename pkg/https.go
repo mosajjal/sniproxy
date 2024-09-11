@@ -50,6 +50,11 @@ func handleTLS(c *Config, conn net.Conn, httpslog zerolog.Logger) error {
 		httpslog.Err(err)
 		return err
 	}
+	if !isValidFQDN(sni) {
+		httpslog.Warn().Msgf("Invalid SNI: %s", sni)
+		conn.Close()
+		return nil
+	}
 	connInfo := acl.ConnInfo{
 		SrcIP:  conn.RemoteAddr(),
 		Domain: sni,

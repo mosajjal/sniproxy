@@ -77,7 +77,7 @@ func (d *domain) LoadDomainsCsv(Filename string) error {
 	if strings.HasPrefix(Filename, "http://") || strings.HasPrefix(Filename, "https://") {
 		d.logger.Info().Msg("domain list is a URL, trying to fetch")
 		client := http.Client{
-			CheckRedirect: func(r *http.Request, via []*http.Request) error {
+			CheckRedirect: func(r *http.Request, _ []*http.Request) error {
 				r.URL.Opaque = r.URL.Path
 				return nil
 			},

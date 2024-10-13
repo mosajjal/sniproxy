@@ -41,6 +41,7 @@ import (
 	"github.com/miekg/dns"
 )
 
+// Server is a DNS-over-HTTPS server runtime
 type Server struct {
 	conf         *config
 	udpClient    *dns.Client
@@ -49,6 +50,7 @@ type Server struct {
 	servemux     *http.ServeMux
 }
 
+// DNSRequest is a DNS request
 type DNSRequest struct {
 	request         *dns.Msg
 	response        *dns.Msg
@@ -59,6 +61,7 @@ type DNSRequest struct {
 	errtext         string
 }
 
+// NewDefaultConfig creates a new default config
 func NewDefaultConfig() *config {
 	conf := &config{}
 	if len(conf.Listen) == 0 {
@@ -80,6 +83,7 @@ func NewDefaultConfig() *config {
 	return conf
 }
 
+// NewServer creates a new Server
 func NewServer(conf *config) (*Server, error) {
 	timeout := time.Duration(conf.Timeout) * time.Second
 	s := &Server{
@@ -125,6 +129,7 @@ func NewServer(conf *config) (*Server, error) {
 	return s, nil
 }
 
+// Start starts the server
 func (s *Server) Start() error {
 	servemux := http.Handler(s.servemux)
 	if s.conf.Verbose {
@@ -158,7 +163,7 @@ func (s *Server) Start() error {
 						TLSConfig: &tls.Config{
 							ClientCAs:  clientCAPool,
 							ClientAuth: tls.RequireAndVerifyClientCert,
-							GetCertificate: func(info *tls.ClientHelloInfo) (certificate *tls.Certificate, e error) {
+							GetCertificate: func(_ *tls.ClientHelloInfo) (certificate *tls.Certificate, e error) {
 								c, err := tls.LoadX509KeyPair(s.conf.Cert, s.conf.Key)
 								if err != nil {
 									fmt.Printf("Error loading server certificate key pair: %v\n", err)
@@ -211,8 +216,8 @@ func (s *Server) handlerFunc(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS, POST")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Max-Age", "3600")
-	w.Header().Set("Server", USER_AGENT)
-	w.Header().Set("X-Powered-By", USER_AGENT)
+	w.Header().Set("Server", UserAgent)
+	w.Header().Set("X-Powered-By", UserAgent)
 
 	if r.Method == "OPTIONS" {
 		w.Header().Set("Content-Length", "0")

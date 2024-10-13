@@ -1,3 +1,4 @@
+// Package doh contains the logic for DNS over HTTPS. It provides a way to make decisions based on the connection information.
 package doh
 
 import (

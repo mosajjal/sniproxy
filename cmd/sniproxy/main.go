@@ -172,7 +172,7 @@ func main() {
 	c.AllowConnToLocal = generalConfig.Bool("allow_conn_to_local")
 
 	var err error
-	c.Acl, err = acl.StartACLs(&logger, k)
+	c.ACL, err = acl.StartACLs(&logger, k)
 	if err != nil {
 		logger.Error().Msgf("failed to start ACLs: %s", err)
 		return

@@ -39,7 +39,7 @@ import (
 	"golang.org/x/net/idna"
 )
 
-func (s *Server) parseRequestGoogle(ctx context.Context, w http.ResponseWriter, r *http.Request) *DNSRequest {
+func (s *Server) parseRequestGoogle(_ context.Context, _ http.ResponseWriter, r *http.Request) *DNSRequest {
 	name := r.FormValue("name")
 	if name == "" {
 		return &DNSRequest{
@@ -59,6 +59,7 @@ func (s *Server) parseRequestGoogle(ctx context.Context, w http.ResponseWriter, 
 	rrTypeStr := r.FormValue("type")
 	rrType := uint16(1)
 	if rrTypeStr == "" {
+		// Do nothing and continue
 	} else if v, err := strconv.ParseUint(rrTypeStr, 10, 16); err == nil {
 		rrType = uint16(v)
 	} else if v, ok := dns.StringToType[strings.ToUpper(rrTypeStr)]; ok {
@@ -75,6 +76,7 @@ func (s *Server) parseRequestGoogle(ctx context.Context, w http.ResponseWriter, 
 	if cdStr == "1" || strings.EqualFold(cdStr, "true") {
 		cd = true
 	} else if cdStr == "0" || strings.EqualFold(cdStr, "false") || cdStr == "" {
+		// Do nothing and continue
 	} else {
 		return &DNSRequest{
 			errcode: 400,
@@ -177,7 +179,7 @@ func parseSubnet(ednsClientSubnet string) (ednsClientFamily uint16, ednsClientAd
 	return
 }
 
-func (s *Server) generateResponseGoogle(ctx context.Context, w http.ResponseWriter, r *http.Request, req *DNSRequest) {
+func (s *Server) generateResponseGoogle(_ context.Context, w http.ResponseWriter, _ *http.Request, req *DNSRequest) {
 	respJSON := jsondns.Marshal(req.response)
 	respStr, err := json.Marshal(respJSON)
 	if err != nil {

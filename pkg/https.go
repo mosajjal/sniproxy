@@ -59,7 +59,7 @@ func handleTLS(c *Config, conn net.Conn, httpslog zerolog.Logger) error {
 		SrcIP:  conn.RemoteAddr(),
 		Domain: sni,
 	}
-	acl.MakeDecision(&connInfo, c.Acl)
+	acl.MakeDecision(&connInfo, c.ACL)
 
 	if connInfo.Decision == acl.Reject {
 		httpslog.Warn().Msgf("ACL rejection srcip=%s", conn.RemoteAddr().String())
@@ -80,7 +80,7 @@ func handleTLS(c *Config, conn net.Conn, httpslog zerolog.Logger) error {
 		rPort = connInfo.DstIP.Port
 	} else {
 		// TODO: lookup needs to be both ipv4 and ipv6
-		rAddrTmp, err := c.DnsClient.lookupDomain(sni, c.PreferredVersion)
+		rAddrTmp, err := c.DNSClient.lookupDomain(sni, c.PreferredVersion)
 		if err != nil {
 			httpslog.Warn().Msg(err.Error())
 			return err
@@ -173,10 +173,11 @@ func getPortFromConn(conn net.Conn) int {
 	return portnum
 }
 
+// RunHTTPS starts the HTTPS server on the configured bind
+// "bind" format is as ip:port
 func RunHTTPS(c *Config, bind string, log zerolog.Logger) {
 	if l, err := net.Listen("tcp", bind); err != nil {
-		log.Error().Msg(err.Error())
-		panic(-1)
+		log.Fatal().Msg(err.Error())
 	} else {
 		log.Info().Msgf("listening https on %s", bind)
 		defer l.Close()

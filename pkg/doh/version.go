@@ -24,6 +24,6 @@
 package doh
 
 const (
-	VERSION    = "2.3.4"
-	USER_AGENT = "DNS-over-HTTPS/" + VERSION + " (+https://github.com/m13253/dns-over-https)"
+	// UserAgent is the default User-Agent string for the HTTP client
+	UserAgent = "DNS-over-HTTPS (+https://github.com/mosajjal/sniproxy)"
 )

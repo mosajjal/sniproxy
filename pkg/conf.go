@@ -14,6 +14,7 @@ import (
 	"golang.org/x/net/proxy"
 )
 
+// Config is the main runtime configuration for the proxy
 type Config struct {
 	PublicIPv4            string   `yaml:"public_ipv4"`
 	PublicIPv6            string   `yaml:"public_ipv6"`
@@ -36,9 +37,9 @@ type Config struct {
 	BindPrometheus        string   `yaml:"bind_prometheus"`
 	AllowConnToLocal      bool     `yaml:"allow_conn_to_local"`
 
-	Acl []acl.ACL `yaml:"-"`
+	ACL []acl.ACL `yaml:"-"`
 
-	DnsClient DNSClient    `yaml:"-"`
+	DNSClient DNSClient    `yaml:"-"`
 	Dialer    proxy.Dialer `yaml:"-"`
 	// list of interface source IPs; used to rotate source IPs when initializing connections
 	SourceAddr       []netip.Addr `yaml:"-"`
@@ -108,7 +109,7 @@ func (c *Config) SetDNSClient(logger zerolog.Logger) error {
 			return fmt.Errorf("error setting up dns client: %v", err)
 		}
 	}
-	c.DnsClient = *dnsClient
+	c.DNSClient = *dnsClient
 	return nil
 }
 
@@ -170,7 +171,7 @@ func parseBinders(bind string, additional []string) ([]string, error) {
 // and the additional bind addresses from bind_http_additional as a list of ports or port ranges
 // such as 8080, 8081-8083, 8085
 // when this function is called, it will compile the list of bind addresses and store it in BindHTTPListeners
-func (c *Config) SetBindHTTPListeners(logger zerolog.Logger) error {
+func (c *Config) SetBindHTTPListeners(_ zerolog.Logger) error {
 	bindAddresses, err := parseBinders(c.BindHTTP, c.BindHTTPAdditional)
 	if err != nil {
 		return fmt.Errorf("error parsing bind addresses for HTTP: %v", err)
@@ -180,7 +181,7 @@ func (c *Config) SetBindHTTPListeners(logger zerolog.Logger) error {
 }
 
 // SetBindHTTPSListeners sets up a list of bind addresses for HTTPS
-func (c *Config) SetBindHTTPSListeners(logger zerolog.Logger) error {
+func (c *Config) SetBindHTTPSListeners(_ zerolog.Logger) error {
 	bindAddresses, err := parseBinders(c.BindHTTPS, c.BindHTTPSAdditional)
 	if err != nil {
 		return fmt.Errorf("error parsing bind addresses for HTTPS: %v", err)

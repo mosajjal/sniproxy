@@ -40,7 +40,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-func (s *Server) parseRequestIETF(ctx context.Context, w http.ResponseWriter, r *http.Request) *DNSRequest {
+func (s *Server) parseRequestIETF(_ context.Context, w http.ResponseWriter, r *http.Request) *DNSRequest {
 	requestBase64 := r.FormValue("dns")
 	requestBinary, err := base64.RawURLEncoding.DecodeString(requestBase64)
 	if err != nil {
@@ -95,7 +95,7 @@ func (s *Server) parseRequestIETF(ctx context.Context, w http.ResponseWriter, r 
 		} else {
 			questionType = strconv.FormatUint(uint64(question.Qtype), 10)
 		}
-		var clientip net.IP = nil
+		var clientip net.IP
 		if s.conf.LogGuessedIP {
 			clientip = s.findClientIP(r)
 		}
@@ -166,7 +166,7 @@ func (s *Server) parseRequestIETF(ctx context.Context, w http.ResponseWriter, r 
 	}
 }
 
-func (s *Server) generateResponseIETF(ctx context.Context, w http.ResponseWriter, r *http.Request, req *DNSRequest) {
+func (s *Server) generateResponseIETF(_ context.Context, w http.ResponseWriter, _ *http.Request, req *DNSRequest) {
 	respJSON := jsondns.Marshal(req.response)
 	req.response.Id = req.transactionID
 	respBytes, err := req.response.Pack()

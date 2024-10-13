@@ -1,4 +1,6 @@
 /*
+Package sniproxy is a simple SNI proxy server that allows you to serve multiple SSL-enabled websites from a single IP address.
+
 Continuation of [byosh] and [SimpleSNIProxy] projects.
 
 # pre-requisites

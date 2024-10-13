@@ -72,7 +72,7 @@ func handle80(c *Config) http.HandlerFunc {
 			SrcIP:  addr,
 			Domain: r.Host,
 		}
-		acl.MakeDecision(&connInfo, c.Acl)
+		acl.MakeDecision(&connInfo, c.ACL)
 		if connInfo.Decision == acl.Reject || connInfo.Decision == acl.OriginIP || err != nil {
 			httplog.Info().Str("src_ip", r.RemoteAddr).Msgf("rejected request")
 			http.Error(w, "Could not reach origin server", 403)

@@ -36,7 +36,7 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		d.logger.Info().Msg("CIDR list is a URL, trying to fetch")
 		client := http.Client{
-			CheckRedirect: func(r *http.Request, via []*http.Request) error {
+			CheckRedirect: func(r *http.Request, _ []*http.Request) error {
 				r.URL.Opaque = r.URL.Path
 				return nil
 			},

@@ -1,3 +1,4 @@
+// Package acl contains the logic for Access Control Lists. It provides a way to make decisions based on the connection information.
 package acl
 
 import (
@@ -35,12 +36,13 @@ type ConnInfo struct {
 	Decision
 }
 
-type ByPriority []ACL
+type byPriority []ACL
 
-func (a ByPriority) Len() int           { return len(a) }
-func (a ByPriority) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a ByPriority) Less(i, j int) bool { return a[i].Priority() < a[j].Priority() }
+func (a byPriority) Len() int           { return len(a) }
+func (a byPriority) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a byPriority) Less(i, j int) bool { return a[i].Priority() < a[j].Priority() }
 
+// ACL is the interface that each ACL should implement
 type ACL interface {
 	Decide(*ConnInfo) error
 	Name() string
@@ -74,7 +76,7 @@ func StartACLs(log *zerolog.Logger, k *koanf.Koanf) ([]ACL, error) {
 
 // MakeDecision loops through all the ACLs and makes a decision for the connection
 func MakeDecision(c *ConnInfo, a []ACL) error {
-	sort.Sort(ByPriority(a))
+	sort.Sort(byPriority(a))
 	for _, acl := range a {
 		if err := acl.Decide(c); err != nil {
 			return err

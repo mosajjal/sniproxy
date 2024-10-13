@@ -76,6 +76,7 @@ func (c *Config) pickSrcAddr(version string) net.IP {
 	return nil
 }
 
+// PerformExternalAQuery performs an external DNS query for the given domain name.
 func (dnsc *DNSClient) PerformExternalAQuery(fqdn string, QType uint16) ([]dns.RR, error) {
 	if !strings.HasSuffix(fqdn, ".") {
 		fqdn = fqdn + "."
@@ -129,7 +130,7 @@ func processQuestion(c *Config, l zerolog.Logger, q dns.Question, decision acl.D
 	// Otherwise do an upstream query and use that answer.
 	default:
 		l.Debug().Msgf("perform external query for domain %s", q.Name)
-		resp, err := c.DnsClient.PerformExternalAQuery(q.Name, q.Qtype)
+		resp, err := c.DNSClient.PerformExternalAQuery(q.Name, q.Qtype)
 		if err != nil {
 			return nil, err
 		}
@@ -226,7 +227,7 @@ func handleDNS(c *Config, l zerolog.Logger) dns.HandlerFunc {
 				SrcIP:  w.RemoteAddr(),
 				Domain: q.Name,
 			}
-			acl.MakeDecision(&connInfo, c.Acl)
+			acl.MakeDecision(&connInfo, c.ACL)
 			answers, err := processQuestion(c, l, q, connInfo.Decision)
 			if err != nil {
 				continue
@@ -238,6 +239,7 @@ func handleDNS(c *Config, l zerolog.Logger) dns.HandlerFunc {
 	}
 }
 
+// RunDNS starts DNS servers based on the provided configuration.
 func RunDNS(c *Config, l zerolog.Logger) {
 	dns.HandleFunc(".", handleDNS(c, l))
 	// start DNS UDP serverUdp
@@ -296,8 +298,6 @@ func RunDNS(c *Config, l zerolog.Logger) {
 		if err != nil {
 			l.Error().Msg(err.Error())
 		}
-		tlsConfig := &tls.Config{}
-		tlsConfig.Certificates = []tls.Certificate{crt}
 
 		// Create the QUIC listener
 		doqConf := doqserver.Config{

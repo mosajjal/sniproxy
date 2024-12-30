@@ -2,6 +2,7 @@ package sniproxy
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"strconv"
@@ -38,7 +39,6 @@ func isSelf(c *Config, ip netip.Addr) bool {
 func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 	c.RecievedHTTPS.Inc(1)
 
-	defer conn.Close()
 	incoming := make([]byte, 2048) // 2048 should be enough for a TLS Client Hello packet. But it could become problematic if tcp connection is fragmented or too big
 	n, err := conn.Read(incoming)
 	if err != nil {
@@ -114,52 +114,24 @@ func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 			conn.Close()
 			return err
 		}
-		// target = tmp.(*net.TCPConn)
 	}
-	defer target.Close()
 	c.ProxiedHTTPS.Inc(1)
 	target.Write(incoming[:n])
-	pipe(conn, target)
+
+	errc := make(chan error, 2)
+	go proxyCopy(errc, conn, target)
+	go proxyCopy(errc, target, conn)
+	<-errc
+	<-errc
 	return nil
 }
 
-func pipe(conn1 net.Conn, conn2 net.Conn) {
-	chan1 := getChannel(conn1)
-	chan2 := getChannel(conn2)
-	for {
-		select {
-		case b1 := <-chan1:
-			if b1 == nil {
-				return
-			}
-			conn2.Write(b1)
-		case b2 := <-chan2:
-			if b2 == nil {
-				return
-			}
-			conn1.Write(b2)
-		}
-	}
-}
+func proxyCopy(errc chan<- error, dst, src net.Conn) {
+	defer src.Close()
+	defer dst.Close()
 
-func getChannel(conn net.Conn) chan []byte {
-	c := make(chan []byte)
-	go func() {
-		b := make([]byte, 1024)
-		for {
-			n, err := conn.Read(b)
-			if n > 0 {
-				res := make([]byte, n)
-				copy(res, b[:n])
-				c <- res
-			}
-			if err != nil {
-				c <- nil
-				break
-			}
-		}
-	}()
-	return c
+	_, err := io.Copy(dst, src)
+	errc <- err
 }
 
 func getPortFromConn(conn net.Conn) int {

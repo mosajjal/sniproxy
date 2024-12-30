@@ -3,9 +3,9 @@ package acl
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -77,7 +77,7 @@ func (g *geoIP) initializeGeoIP() error {
 	} else {
 		g.logger.Info().Msgf("(re)loading File: %s", g.Path)
 		var err error
-		if scanner, err = ioutil.ReadFile(g.Path); err != nil {
+		if scanner, err = os.ReadFile(g.Path); err != nil {
 			return err
 		}
 	}

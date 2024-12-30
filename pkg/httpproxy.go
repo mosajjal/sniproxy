@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/mosajjal/sniproxy/v2/pkg/acl"
 	"github.com/rs/zerolog"
@@ -45,8 +44,8 @@ func RunHTTP(c *Config, bind string, l zerolog.Logger) {
 	s := &http.Server{
 		Addr:           bind,
 		Handler:        handler,
-		ReadTimeout:    10 * time.Second,
-		WriteTimeout:   10 * time.Second,
+		ReadTimeout:    HTTPReadTimeout,
+		WriteTimeout:   HTTPWriteTimeout,
 		MaxHeaderBytes: 1 << 20,
 	}
 

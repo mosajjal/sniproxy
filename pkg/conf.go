@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mosajjal/sniproxy/v2/pkg/acl"
 	"github.com/rcrowley/go-metrics"
@@ -53,6 +54,15 @@ type Config struct {
 	RecievedDNS   metrics.Counter `yaml:"-"`
 	ProxiedDNS    metrics.Counter `yaml:"-"`
 }
+
+const (
+	// DNSBootStrapIPv4 is the default DNS ipv4 server to use for DoH and DoT
+	DNSBootStrapIPv4 = "1.1.1.1"
+	// DNSBootstrapIPv6 is the default DNS ipv6 server to use for DoH and DoT
+	DNSBootstrapIPv6 = "2606:4700:4700::1111"
+	// DNSTimeout is the default timeout for DNS queries
+	DNSTimeout = 10 * time.Second
+)
 
 // below are some functions to help populating some config fields based on other config fields
 

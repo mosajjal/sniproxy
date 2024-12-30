@@ -79,7 +79,6 @@ func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 		rAddr = connInfo.DstIP.IP
 		rPort = connInfo.DstIP.Port
 	} else {
-		// TODO: lookup needs to be both ipv4 and ipv6
 		rAddrTmp, err := c.DNSClient.lookupDomain(sni, c.PreferredVersion)
 		if err != nil {
 			l.Warn().Msg(err.Error())

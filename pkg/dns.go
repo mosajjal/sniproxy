@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"time"
 
 	rdns "github.com/folbricht/routedns"
 
@@ -36,7 +35,8 @@ func (c *Config) pickSrcAddr(version string) net.IP {
 	if len(c.SourceAddr) == 0 {
 		return nil
 	}
-	// shuffle the list of source addresses. TODO: potentially a better way to do this
+	// shuffle the list of source addresses
+	// TODO: potentially a better way to do this
 	for i := range c.SourceAddr {
 		j := rand.Intn(i + 1)
 		c.SourceAddr[i], c.SourceAddr[j] = c.SourceAddr[j], c.SourceAddr[i]
@@ -391,7 +391,7 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 			LocalAddr:    ldarr,
 			UDPSize:      1300,
 			Dialer:       *dialer,
-			QueryTimeout: 10 * time.Second, //TODO: make this configurable
+			QueryTimeout: DNSTimeout,
 		}
 		id, err := rdns.NewDNSClient("id", Address, "udp", opt)
 		if err != nil {
@@ -430,17 +430,17 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 			return nil, err
 		}
 		var ldarr net.IP
-		bootstrapAddr := "1.1.1.1"
+		bootstrapAddr := DNSBootStrapIPv4
 		if parsedURL.Scheme == "tls6" || parsedURL.Scheme == "tcp-tls6" {
 			ldarr = C.pickSrcAddr("ipv6only")
-			bootstrapAddr = "2606:4700:4700::1111"
+			bootstrapAddr = DNSBootstrapIPv6
 		} else {
 			ldarr = C.pickSrcAddr("ipv4only")
 		}
 
 		opt := rdns.DoTClientOptions{
 			TLSConfig:     tlsConfig,
-			BootstrapAddr: bootstrapAddr, //TODO: make this configurable
+			BootstrapAddr: bootstrapAddr,
 			LocalAddr:     ldarr,
 			Dialer:        *dialer,
 		}
@@ -459,7 +459,7 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 		opt := rdns.DoHClientOptions{
 			Method:        "POST", // TODO: support anything other than POST
 			TLSConfig:     tlsConfig,
-			BootstrapAddr: "1.1.1.1", //TODO: make this configurable
+			BootstrapAddr: DNSBootStrapIPv4,
 			Transport:     transport,
 			LocalAddr:     C.pickSrcAddr("ipv4only"), //TODO:support IPv6
 			Dialer:        *dialer,

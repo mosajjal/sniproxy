@@ -4,7 +4,7 @@ go 1.23.2
 
 require (
 	github.com/deathowl/go-metrics-prometheus v0.0.0-20221009205350-f2a1482ba35b
-	github.com/folbricht/routedns v0.1.85
+	github.com/folbricht/routedns v0.1.87
 	github.com/golang-collections/collections v0.0.0-20130729185459-604e922904d3
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/handlers v1.5.2
@@ -25,9 +25,14 @@ require (
 )
 
 require (
+	git.schwanenlied.me/yawning/x448.git v0.0.0-20170617130356-01b048fb03d6 // indirect
 	github.com/RackSec/srslog v0.0.0-20180709174129-a4725f04ec91 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/cisco/go-hpke v0.0.0-20210215210317-01c430f1f302 // indirect
+	github.com/cisco/go-tls-syntax v0.0.0-20200617162716-46b0cfb76b9b // indirect
+	github.com/cloudflare/circl v1.5.0 // indirect
+	github.com/cloudflare/odoh-go v1.0.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect

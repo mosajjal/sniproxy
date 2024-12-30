@@ -241,6 +241,7 @@ func handleDNS(c *Config, l zerolog.Logger) dns.HandlerFunc {
 
 // RunDNS starts DNS servers based on the provided configuration.
 func RunDNS(c *Config, l zerolog.Logger) {
+	l = l.With().Str("service", "dns").Logger()
 	dns.HandleFunc(".", handleDNS(c, l))
 	// start DNS UDP serverUdp
 	if c.BindDNSOverUDP != "" {

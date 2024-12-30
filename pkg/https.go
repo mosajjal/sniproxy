@@ -35,23 +35,23 @@ func isSelf(c *Config, ip netip.Addr) bool {
 }
 
 // handleTLS handles the incoming TLS connection
-func handleTLS(c *Config, conn net.Conn, httpslog zerolog.Logger) error {
+func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 	c.RecievedHTTPS.Inc(1)
 
 	defer conn.Close()
 	incoming := make([]byte, 2048) // 2048 should be enough for a TLS Client Hello packet. But it could become problematic if tcp connection is fragmented or too big
 	n, err := conn.Read(incoming)
 	if err != nil {
-		httpslog.Err(err)
+		l.Err(err)
 		return err
 	}
 	sni, err := GetHostname(incoming[:n])
 	if err != nil {
-		httpslog.Err(err)
+		l.Err(err)
 		return err
 	}
 	if !isValidFQDN(sni) {
-		httpslog.Warn().Msgf("Invalid SNI: %s", sni)
+		l.Warn().Msgf("Invalid SNI: %s", sni)
 		conn.Close()
 		return nil
 	}
@@ -62,38 +62,38 @@ func handleTLS(c *Config, conn net.Conn, httpslog zerolog.Logger) error {
 	acl.MakeDecision(&connInfo, c.ACL)
 
 	if connInfo.Decision == acl.Reject {
-		httpslog.Warn().Msgf("ACL rejection srcip=%s", conn.RemoteAddr().String())
+		l.Warn().Msgf("ACL rejection srcip=%s", conn.RemoteAddr().String())
 		conn.Close()
 		return nil
 	}
 	// check SNI against domainlist for an extra layer of security
 	if connInfo.Decision == acl.OriginIP {
-		httpslog.Warn().Str("sni", sni).Str("srcip", conn.RemoteAddr().String()).Msg("connection request rejected since it's not allowed as per ACL.. resetting TCP")
+		l.Warn().Str("sni", sni).Str("srcip", conn.RemoteAddr().String()).Msg("connection request rejected since it's not allowed as per ACL.. resetting TCP")
 		conn.Close()
 		return nil
 	}
 	rPort := getPortFromConn(conn) // by default, we'll use the listening port as the destination port
 	var rAddr net.IP
 	if connInfo.Decision == acl.Override {
-		httpslog.Debug().Msgf("overriding destination IP %s with %s as per override ACL", rAddr.String(), connInfo.DstIP.String())
+		l.Debug().Msgf("overriding destination IP %s with %s as per override ACL", rAddr.String(), connInfo.DstIP.String())
 		rAddr = connInfo.DstIP.IP
 		rPort = connInfo.DstIP.Port
 	} else {
 		// TODO: lookup needs to be both ipv4 and ipv6
 		rAddrTmp, err := c.DNSClient.lookupDomain(sni, c.PreferredVersion)
 		if err != nil {
-			httpslog.Warn().Msg(err.Error())
+			l.Warn().Msg(err.Error())
 			return err
 		}
 		// TODO: handle timeout and context here
 		if isSelf(c, rAddrTmp) && !c.AllowConnToLocal {
-			httpslog.Info().Msg("connection to private IP or self ignored")
+			l.Info().Msg("connection to private IP or self ignored")
 			return nil
 		}
 		rAddr = rAddrTmp.AsSlice()
 	}
 
-	httpslog.Debug().Str("sni", sni).Str("srcip", conn.RemoteAddr().String()).Str("dstip", rAddr.String()).Msg("connection request accepted")
+	l.Debug().Str("sni", sni).Str("srcip", conn.RemoteAddr().String()).Str("dstip", rAddr.String()).Msg("connection request accepted")
 	var target net.Conn
 	// if the proxy is not set, or the destination IP is localhost, we'll use the OS's TCP stack and won't go through the SOCKS5 proxy
 	if c.Dialer == proxy.Direct || rAddr.IsLoopback() {
@@ -104,14 +104,14 @@ func handleTLS(c *Config, conn net.Conn, httpslog zerolog.Logger) error {
 		}
 		target, err = net.DialTCP("tcp", &srcAddr, &net.TCPAddr{IP: rAddr, Port: rPort})
 		if err != nil {
-			httpslog.Info().Msgf("could not connect to target with error: %s", err)
+			l.Info().Msgf("could not connect to target with error: %s", err)
 			conn.Close()
 			return err
 		}
 	} else {
 		target, err = c.Dialer.Dial("tcp", fmt.Sprintf("%s:%d", rAddr, rPort))
 		if err != nil {
-			httpslog.Info().Msgf("could not connect to target with error: %s", err)
+			l.Info().Msgf("could not connect to target with error: %s", err)
 			conn.Close()
 			return err
 		}
@@ -175,17 +175,18 @@ func getPortFromConn(conn net.Conn) int {
 
 // RunHTTPS starts the HTTPS server on the configured bind
 // "bind" format is as ip:port
-func RunHTTPS(c *Config, bind string, log zerolog.Logger) {
-	if l, err := net.Listen("tcp", bind); err != nil {
-		log.Fatal().Msg(err.Error())
+func RunHTTPS(c *Config, bind string, l zerolog.Logger) {
+	l = l.With().Str("service", "https").Str("listener", bind).Logger()
+	if listener, err := net.Listen("tcp", bind); err != nil {
+		l.Fatal().Msg(err.Error())
 	} else {
-		log.Info().Msgf("listening https on %s", bind)
-		defer l.Close()
+		l.Info().Msgf("listening https on %s", bind)
+		defer listener.Close()
 		for {
-			if con, err := l.Accept(); err != nil {
-				log.Error().Msg(err.Error())
+			if con, err := listener.Accept(); err != nil {
+				l.Error().Msg(err.Error())
 			} else {
-				go handleTLS(c, con, log)
+				go handleTLS(c, con, l)
 			}
 		}
 	}

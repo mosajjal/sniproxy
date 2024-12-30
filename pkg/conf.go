@@ -62,6 +62,10 @@ const (
 	DNSBootstrapIPv6 = "2606:4700:4700::1111"
 	// DNSTimeout is the default timeout for DNS queries
 	DNSTimeout = 10 * time.Second
+	// HTTPReadTimeout is the default timeout for HTTP requests
+	HTTPReadTimeout = 10 * time.Second
+	// HTTPWriteTimeout is the default timeout for HTTP responses
+	HTTPWriteTimeout = 10 * time.Second
 )
 
 // below are some functions to help populating some config fields based on other config fields

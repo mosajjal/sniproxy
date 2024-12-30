@@ -1,3 +1,4 @@
+// sniproxy's main CLI entrpoint.
 package main
 
 import (
@@ -36,9 +37,9 @@ import (
 var c sniproxy.Config
 
 var (
-	version   string = "v2-UNKNOWN"
-	commit    string = "NOT PROVIDED"
-	envPrefix string = "SNIPROXY_" // used as the prefix to read env variables at runtime
+	version   = "v2-UNKNOWN"
+	commit    = "NOT PROVIDED"
+	envPrefix = "SNIPROXY_" // used as the prefix to read env variables at runtime
 )
 
 //go:embed config.defaults.yaml
@@ -53,9 +54,7 @@ func main() {
 	cmd := &cobra.Command{
 		Use:   "sniproxy",
 		Short: "SNI Proxy with Embedded DNS Server",
-		Run: func(command *cobra.Command, args []string) {
-
-		},
+		Run:   func(_ *cobra.Command, _ []string) {},
 	}
 	flags := cmd.Flags()
 	config := flags.StringP("config", "c", "", "path to YAML configuration file")
@@ -73,7 +72,7 @@ func main() {
 		return
 	}
 	if flags.Changed("defaultconfig") {
-		fmt.Fprintf(os.Stdout, string(defaultConfig))
+		fmt.Fprint(os.Stdout, string(defaultConfig))
 		return
 	}
 
@@ -257,13 +256,14 @@ func main() {
 	logger.Info().Msgf("HTTPS listeners: %v", c.BindHTTPSListeners)
 
 	for _, addr := range c.BindHTTPListeners {
-		go sniproxy.RunHTTP(&c, addr, logger.With().Str("service", "http").Str("listener", addr).Logger())
+		go sniproxy.RunHTTP(&c, addr, logger)
 	}
 	for _, addr := range c.BindHTTPSListeners {
-		go sniproxy.RunHTTPS(&c, addr, logger.With().Str("service", "https").Str("listener", addr).Logger())
+		go sniproxy.RunHTTPS(&c, addr, logger)
 	}
-	go sniproxy.RunDNS(&c, logger.With().Str("service", "dns").Logger())
+	go sniproxy.RunDNS(&c, logger)
 
-	// wait forever. TODO: add signal handling here
+	// wait forever.
+	// TODO: add signal handling here
 	select {}
 }

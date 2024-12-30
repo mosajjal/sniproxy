@@ -11,9 +11,6 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// var httplog = logger.With().Str("service", "http").Logger()
-var httplog zerolog.Logger
-
 var passthruRequestHeaderKeys = [...]string{
 	"Accept",
 	"Accept-Encoding",
@@ -40,10 +37,10 @@ var passthruResponseHeaderKeys = [...]string{
 
 // RunHTTP starts the HTTP server on the configured bind. bind format is 0.0.0.0:80 or similar
 func RunHTTP(c *Config, bind string, l zerolog.Logger) {
-	httplog = l
 	handler := http.NewServeMux()
+	l = l.With().Str("service", "http").Str("listener", bind).Logger()
 
-	handler.HandleFunc("/", handle80(c))
+	handler.HandleFunc("/", handle80(c, l))
 
 	s := &http.Server{
 		Addr:           bind,
@@ -53,14 +50,14 @@ func RunHTTP(c *Config, bind string, l zerolog.Logger) {
 		MaxHeaderBytes: 1 << 20,
 	}
 
-	httplog.Info().Str("bind", bind).Msg("starting http server")
+	l.Info().Str("bind", bind).Msg("starting http server")
 	if err := s.ListenAndServe(); err != nil {
-		httplog.Error().Msg(err.Error())
+		l.Error().Msg(err.Error())
 		panic(-1)
 	}
 }
 
-func handle80(c *Config) http.HandlerFunc {
+func handle80(c *Config, l zerolog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c.RecievedHTTP.Inc(1)
 
@@ -74,19 +71,19 @@ func handle80(c *Config) http.HandlerFunc {
 		}
 		acl.MakeDecision(&connInfo, c.ACL)
 		if connInfo.Decision == acl.Reject || connInfo.Decision == acl.OriginIP || err != nil {
-			httplog.Info().Str("src_ip", r.RemoteAddr).Msgf("rejected request")
+			l.Info().Str("src_ip", r.RemoteAddr).Msgf("rejected request")
 			http.Error(w, "Could not reach origin server", 403)
 			return
 		}
 		// if the URL starts with the public IP, it needs to be skipped to avoid loops
 		// TODO: ipv6 should also be checked here
 		if strings.HasPrefix(r.Host, c.PublicIPv4) {
-			httplog.Warn().Msg("someone is requesting HTTP to sniproxy itself, ignoring...")
+			l.Warn().Msg("someone is requesting HTTP to sniproxy itself, ignoring...")
 			http.Error(w, "Could not reach origin server", 404)
 			return
 		}
 
-		httplog.Info().Str("method", r.Method).Str("host", r.Host).Str("url", r.URL.String()).Msg("request received")
+		l.Info().Str("method", r.Method).Str("host", r.Host).Str("url", r.URL.String()).Msg("request received")
 
 		// Construct filtered header to send to origin server
 		hh := http.Header{}
@@ -113,7 +110,7 @@ func handle80(c *Config) http.HandlerFunc {
 		// check to see if this host is listed to be processed, otherwise RESET
 		// if !c.AllDomains && inDomainList(r.Host+".") {
 		// 	http.Error(w, "Could not reach origin server", 403)
-		// 	httplog.Warn().Msg("a client requested connection to " + r.Host + ", but it's not allowed as per configuration.. sending 403")
+		// 	l.Warn().Msg("a client requested connection to " + r.Host + ", but it's not allowed as per configuration.. sending 403")
 		// 	return
 		// }
 
@@ -126,12 +123,12 @@ func handle80(c *Config) http.HandlerFunc {
 		resp, err := transport.RoundTrip(&rr)
 		if err != nil {
 			// TODO: Passthru more error information
-			httplog.Error().Msg(err.Error())
+			l.Error().Msg(err.Error())
 			return
 		}
 		defer resp.Body.Close()
 
-		httplog.Info().Msgf("http response with status_code %s", resp.Status)
+		l.Info().Msgf("http response with status_code %s", resp.Status)
 
 		// Transfer filtered header from origin server -> client
 		respH := w.Header()

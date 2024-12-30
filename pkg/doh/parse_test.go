@@ -102,7 +102,8 @@ func TestEdns0SubnetParseCIDR(t *testing.T) {
 			t.Error(err)
 			continue
 		}
-		t.Log(msg.Pack())
+		// packedMsg, _ := msg.Pack()
+		t.Logf("msg: %#+v", msg)
 	}
 
 	// ------127.0.0.1/24-----

@@ -59,10 +59,10 @@ func (g geoIP) getCountry(ipAddr string) (string, error) {
 // initializeGeoIP loads the geolocation database from the specified g.Path.
 func (g *geoIP) initializeGeoIP() error {
 
-	g.logger.Info().Msg("Loading the domain from file/url")
+	g.logger.Info().Msg("loading the geoip db from file/url")
 	var scanner []byte
 	if strings.HasPrefix(g.Path, "http://") || strings.HasPrefix(g.Path, "https://") {
-		g.logger.Info().Msg("domain list is a URL, trying to fetch")
+		g.logger.Info().Msg("geoip db path is a URL, trying to fetch")
 		resp, err := http.Get(g.Path)
 		if err != nil {
 			return err
@@ -75,7 +75,7 @@ func (g *geoIP) initializeGeoIP() error {
 		}
 
 	} else {
-		g.logger.Info().Msgf("(re)loading File: %s", g.Path)
+		g.logger.Info().Msgf("(re)loading file: %s", g.Path)
 		var err error
 		if scanner, err = os.ReadFile(g.Path); err != nil {
 			return err
@@ -124,7 +124,7 @@ func (g geoIP) checkGeoIPSkip(addr net.Addr) bool {
 	g.logger.Debug().Msgf("incoming tcp connection from ip %s and country %s", ip, country)
 
 	if err != nil {
-		g.logger.Info().Msgf("Failed to get the geolocation of ip %s", ip)
+		g.logger.Info().Msgf("failed to get the geolocation of ip %s", ip)
 		return false
 	}
 	if slices.Contains(g.BlockedCountries, country) {

@@ -1,11 +1,11 @@
-FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:1.23.4-alpine3.21
+FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:alpine
+LABEL maintainer="Ali Mosajjal <hi@n0p.me>"
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 ARG TARGETOS
 ARG TARGETARCH
 
-LABEL maintainer "Ali Mosajjal <hi@n0p.me>"
 RUN apk add --no-cache git
 RUN mkdir /app
 ADD . /app/

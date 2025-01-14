@@ -27,6 +27,5 @@ jobs:
           goos: ${{ matrix.goos }}
           goarch: ${{ matrix.goarch }}
           project_path: "./cmd/sniproxy"
-          goversion: 1.23.4
           ldflags: "-s -w -X main.version=${{ github.event.release.tag_name }} -X main.commit=${{ github.sha }}"
           build_flags: -v

@@ -17,7 +17,7 @@ jobs:
       - name: Set up Go 3.x
         uses: actions/setup-go@v5
         with:
-          go-version: "latest"
+          go-version: "stable"
 
       - name: Get dependencies
         run: go get -v -t -d ./...

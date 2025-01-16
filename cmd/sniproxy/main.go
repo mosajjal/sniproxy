@@ -11,17 +11,17 @@ import (
 	"strings"
 	"time"
 
+	prometheusmetrics "github.com/deathowl/go-metrics-prometheus"
 	"github.com/google/uuid"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/rawbytes"
-	"github.com/rs/zerolog"
-
-	prometheusmetrics "github.com/deathowl/go-metrics-prometheus"
+	"github.com/pkg/profile"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rcrowley/go-metrics"
+	"github.com/rs/zerolog"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
@@ -59,6 +59,8 @@ func main() {
 	flags := cmd.Flags()
 	config := flags.StringP("config", "c", "", "path to YAML configuration file")
 	_ = flags.Bool("defaultconfig", false, "write the default config yaml file to stdout")
+	memprof := flags.Bool("memprof", false, "enable mem profiling")
+	cpuprof := flags.Bool("cpuprof", false, "enable cpu profiling")
 	_ = flags.BoolP("version", "v", false, "show version info and exit")
 	if err := cmd.Execute(); err != nil {
 		logger.Error().Msgf("failed to execute command: %s", err)
@@ -74,6 +76,12 @@ func main() {
 	if flags.Changed("defaultconfig") {
 		fmt.Fprint(os.Stdout, string(defaultConfig))
 		return
+	}
+	if *memprof {
+		defer profile.Start(profile.MemProfile).Stop()
+	}
+	if *cpuprof {
+		defer profile.Start(profile.CPUProfile).Stop()
 	}
 
 	k := koanf.New(".")

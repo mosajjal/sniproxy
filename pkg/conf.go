@@ -56,10 +56,6 @@ type Config struct {
 }
 
 const (
-	// DNSBootStrapIPv4 is the default DNS ipv4 server to use for DoH and DoT
-	DNSBootStrapIPv4 = "1.1.1.1"
-	// DNSBootstrapIPv6 is the default DNS ipv6 server to use for DoH and DoT
-	DNSBootstrapIPv6 = "2606:4700:4700::1111"
 	// DNSTimeout is the default timeout for DNS queries
 	DNSTimeout = 10 * time.Second
 	// HTTPReadTimeout is the default timeout for HTTP requests

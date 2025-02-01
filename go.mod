@@ -13,6 +13,7 @@ require (
 	github.com/miekg/dns v1.1.62
 	github.com/mosajjal/doqd v0.0.0-20230911082614-66fb2db2687f
 	github.com/oschwald/maxminddb-golang v1.13.1
+	github.com/pkg/profile v1.7.0
 	github.com/prometheus/client_golang v1.20.5
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
 	github.com/rs/zerolog v1.33.0
@@ -33,6 +34,7 @@ require (
 	github.com/cloudflare/circl v1.5.0 // indirect
 	github.com/cloudflare/odoh-go v1.0.1-0.20230926114050-f39fa019b017 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
+	github.com/felixge/fgprof v0.9.3 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect

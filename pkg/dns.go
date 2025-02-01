@@ -29,6 +29,28 @@ type DNSClient struct {
 
 var dnsLock sync.RWMutex
 
+// findBootstrapIP tries to resolve well-known DNS resolvers
+// to their IP addresses
+//
+// dns.quad9.net -> 9.9.9.9, 2620:fe::9
+// one.one.one.one -> 1.1.1.1, 2606:4700:4700::1111
+// dns.google -> 8.8.8.8, 2001:4860:4860::8888
+func findBootstrapIP(fqdn string, version int) string {
+	wellKnownDomains := map[string]map[int]string{
+		"dns.quad9.net":   {4: "9.9.9.9", 6: "2620:fe::9"},
+		"one.one.one.one": {4: "1.1.1.1", 6: "2606:4700:4700::1111"},
+		"dns.google":      {4: "8.8.8.8", 6: "2001:4860:4860::8888"},
+	}
+	if version != 4 && version != 6 {
+		return ""
+	}
+	if ips, ok := wellKnownDomains[fqdn]; !ok {
+		return ""
+	} else {
+		return ips[version]
+	}
+}
+
 // pickSrcAddr picks a random source address from the list of configured source addresses.
 // version specifies the IP version to pick, 4 or 6. If 0, any version is picked.
 func (c *Config) pickSrcAddr(version string) net.IP {
@@ -430,10 +452,10 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 			return nil, err
 		}
 		var ldarr net.IP
-		bootstrapAddr := DNSBootStrapIPv4
+		bootstrapAddr := findBootstrapIP(parsedURL.Host, 4)
 		if parsedURL.Scheme == "tls6" || parsedURL.Scheme == "tcp-tls6" {
 			ldarr = C.pickSrcAddr("ipv6only")
-			bootstrapAddr = DNSBootstrapIPv6
+			bootstrapAddr = findBootstrapIP(parsedURL.Host, 6)
 		} else {
 			ldarr = C.pickSrcAddr("ipv4only")
 		}
@@ -459,7 +481,7 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 		opt := rdns.DoHClientOptions{
 			Method:        "POST", // TODO: support anything other than POST
 			TLSConfig:     tlsConfig,
-			BootstrapAddr: DNSBootStrapIPv4,
+			BootstrapAddr: findBootstrapIP(parsedURL.Host, 4),
 			Transport:     transport,
 			LocalAddr:     C.pickSrcAddr("ipv4only"), //TODO:support IPv6
 			Dialer:        *dialer,

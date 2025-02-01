@@ -11,17 +11,17 @@ import (
 	"strings"
 	"time"
 
+	prometheusmetrics "github.com/deathowl/go-metrics-prometheus"
 	"github.com/google/uuid"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/rawbytes"
-	"github.com/rs/zerolog"
-
-	prometheusmetrics "github.com/deathowl/go-metrics-prometheus"
+	"github.com/pkg/profile"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rcrowley/go-metrics"
+	"github.com/rs/zerolog"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
@@ -49,6 +49,32 @@ var defaultConfig []byte
 var nocolorLog = strings.ToLower(os.Getenv("NO_COLOR")) == "true"
 var logger = zerolog.New(os.Stderr).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339, NoColor: nocolorLog})
 
+func enableProfile(profileType string) interface{ Stop() } {
+	switch profileType {
+	case "":
+		return nil
+	case "cpu":
+		return profile.Start(profile.CPUProfile)
+	case "mem":
+		return profile.Start(profile.MemProfile)
+	case "block":
+		return profile.Start(profile.BlockProfile)
+	case "mutex":
+		return profile.Start(profile.MutexProfile)
+	case "trace":
+		return profile.Start(profile.TraceProfile)
+	case "threadcreate":
+		return profile.Start(profile.ThreadcreationProfile)
+	case "goroutine":
+		return profile.Start(profile.GoroutineProfile)
+	case "clock":
+		return profile.Start(profile.ClockProfile)
+	default:
+		logger.Error().Msgf("unknown profile type: %s", profileType)
+	}
+	return nil
+}
+
 func main() {
 
 	cmd := &cobra.Command{
@@ -59,6 +85,7 @@ func main() {
 	flags := cmd.Flags()
 	config := flags.StringP("config", "c", "", "path to YAML configuration file")
 	_ = flags.Bool("defaultconfig", false, "write the default config yaml file to stdout")
+	prof := flags.String("prof", "", "enable profiling. can be one of: [cpu, mem, block, mutex, trace, threadcreate, goroutine, clock]")
 	_ = flags.BoolP("version", "v", false, "show version info and exit")
 	if err := cmd.Execute(); err != nil {
 		logger.Error().Msgf("failed to execute command: %s", err)
@@ -74,6 +101,10 @@ func main() {
 	if flags.Changed("defaultconfig") {
 		fmt.Fprint(os.Stdout, string(defaultConfig))
 		return
+	}
+	ret := enableProfile(*prof)
+	if ret != nil {
+		defer ret.Stop()
 	}
 
 	k := koanf.New(".")

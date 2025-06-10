@@ -31,7 +31,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cisco/go-hpke v0.0.0-20230407100446-246075f83609 // indirect
 	github.com/cisco/go-tls-syntax v0.0.0-20200617162716-46b0cfb76b9b // indirect
-	github.com/cloudflare/circl v1.5.0 // indirect
+	github.com/cloudflare/circl v1.6.1 // indirect
 	github.com/cloudflare/odoh-go v1.0.1-0.20230926114050-f39fa019b017 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/felixge/fgprof v0.9.3 // indirect

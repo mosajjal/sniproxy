@@ -11,7 +11,7 @@ require (
 	github.com/knadh/koanf v1.5.0
 	github.com/m13253/dns-over-https/v2 v2.3.10
 	github.com/miekg/dns v1.1.67
-	github.com/mosajjal/doqd v0.0.0-20230911082614-66fb2db2687f
+	github.com/mosajjal/doqd v0.0.0-20250722230636-f2af367ae3f6
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/pkg/profile v1.7.0
 	github.com/prometheus/client_golang v1.22.0

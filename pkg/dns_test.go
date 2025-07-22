@@ -20,7 +20,7 @@ func TestDNSClient_lookupDomain4(t *testing.T) {
 		want    []net.IP
 		wantErr bool
 	}{
-		{client: dnsc, name: "test1", domain: "ident.me", want: []net.IP{net.IPv4(49, 12, 234, 183)}, wantErr: false},
+		{client: dnsc, name: "test1", domain: "dns.google", want: []net.IP{net.IPv4(8, 8, 8, 8), net.IPv4(8, 8, 4, 4)}, wantErr: false},
 		{client: dnsc, name: "test2", domain: "one.one.one.one", want: []net.IP{net.IPv4(1, 1, 1, 1), net.IPv4(1, 0, 0, 1)}, wantErr: false},
 	}
 	for _, tt := range tests {

@@ -21,10 +21,9 @@ import (
 
 var tlsHeaderLength = 5
 
-// GetHostname :This function is basically all most folks want to invoke out of this
-// jumble of bits. This will take an incoming TLS Client Hello (including
-// all the fuzzy bits at the beginning of it - fresh out of the socket) and
-// go ahead and give us the SNI Name they want.
+// GetHostname extracts the Server Name Indication (SNI) from a TLS Client Hello packet.
+// This function takes raw TLS handshake data and returns the hostname requested by the client.
+// It returns an error if the data doesn't contain a valid TLS Client Hello or SNI extension.
 func GetHostname(data []byte) (string, error) {
 	if len(data) == 0 || data[0] != 0x16 {
 		return "", fmt.Errorf("Doesn't look like a TLS Client Hello")
@@ -45,7 +44,8 @@ func GetHostname(data []byte) (string, error) {
 	return string(sni), nil
 }
 
-/* Return the length computed from the two octets starting at index */
+// lengthFromData extracts a 16-bit length value from two consecutive bytes at the given index.
+// It interprets the bytes as a big-endian unsigned integer.
 func lengthFromData(data []byte, index int) int {
 	b1 := int(data[index])
 	b2 := int(data[index+1])
@@ -53,8 +53,8 @@ func lengthFromData(data []byte, index int) int {
 	return (b1 << 8) + b2
 }
 
-// getSNIBlock :Given a Server Name TLS Extension block, parse out and return the SNI
-// (Server Name Indication) payload
+// getSNIBlock parses a Server Name TLS Extension block and extracts the SNI (Server Name Indication) payload.
+// It returns the raw SNI bytes or an error if the SNI extension is not found.
 func getSNIBlock(data []byte) ([]byte, error) {
 	index := 0
 
@@ -76,7 +76,8 @@ func getSNIBlock(data []byte) ([]byte, error) {
 	)
 }
 
-// getSNBlock :Given a TLS Extensions data block, go ahead and find the SN block
+// getSNBlock parses the TLS Extensions data block to find and return the Server Name (SN) extension block.
+// It returns an error if the SN block is not found or the data is malformed.
 func getSNBlock(data []byte) ([]byte, error) {
 	index := 0
 
@@ -108,7 +109,8 @@ func getSNBlock(data []byte) ([]byte, error) {
 	)
 }
 
-// getExtensionBlock :Given a raw TLS Client Hello, go ahead and find all the Extensions
+// getExtensionBlock extracts all Extensions from a raw TLS Client Hello message.
+// It parses the TLS handshake structure to locate and return the extensions section.
 func getExtensionBlock(data []byte) ([]byte, error) {
 	/*   data[0]           - content type
 	 *   data[1], data[2]  - major/minor version

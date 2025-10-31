@@ -52,8 +52,9 @@ func (o *override) startProxy() {
 		return
 	}
 	for k, v := range o.rules {
-		o.logger.Info().Msgf("adding overide rule %s -> %s", k, v)
-		// TODO: create a regex matcher for SNIRoute
+		o.logger.Info().Msgf("adding override rule %s -> %s", k, v)
+		// AddSNIRoute supports exact matches and wildcards (*.example.com)
+		// Regex matching would require changes to the tcpproxy library
 		o.tcpproxy.AddSNIRoute(fmt.Sprintf("127.0.0.1:%d", o.tcpproxyport), k, tcpproxy.To(v))
 	}
 	o.logger.Info().Msgf("starting tcpproxy on port %d", o.tcpproxyport)

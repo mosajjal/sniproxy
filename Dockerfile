@@ -1,4 +1,4 @@
-FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:alpine
+FROM --platform=${TARGETPLATFORM:-linux/amd64} golang:alpine
 LABEL maintainer="Ali Mosajjal <hi@n0p.me>"
 
 ARG TARGETPLATFORM

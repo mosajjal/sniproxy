@@ -8,7 +8,6 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
-	"sync"
 
 	rdns "github.com/folbricht/routedns"
 
@@ -26,8 +25,6 @@ type DNSClient struct {
 	rdns.Resolver
 	C *Config
 }
-
-var dnsLock sync.RWMutex
 
 // findBootstrapIP tries to resolve well-known DNS resolvers
 // to their IP addresses
@@ -52,49 +49,70 @@ func findBootstrapIP(fqdn string, version int) string {
 }
 
 // pickSrcAddr picks a random source address from the list of configured source addresses.
-// version specifies the IP version to pick, 4 or 6. If 0, any version is picked.
+// version specifies the IP version to pick. It returns nil if no suitable address is found.
 func (c *Config) pickSrcAddr(version string) net.IP {
 	if len(c.SourceAddr) == 0 {
 		return nil
 	}
-	// shuffle the list of source addresses
-	// TODO: potentially a better way to do this
-	for i := range c.SourceAddr {
-		j := rand.Intn(i + 1)
-		c.SourceAddr[i], c.SourceAddr[j] = c.SourceAddr[j], c.SourceAddr[i]
-	}
-	switch version {
-	case "ipv4only":
-		for _, ip := range c.SourceAddr {
-			if ip.Is4() {
-				return ip.AsSlice()
+
+	ipVersion := ParseIPVersion(version)
+
+	// Filter addresses based on version preference
+	var candidates []netip.Addr
+	for _, addr := range c.SourceAddr {
+		switch ipVersion {
+		case IPVersionIPv4Only:
+			if addr.Is4() {
+				candidates = append(candidates, addr)
 			}
-		}
-	case "ipv6only":
-		for _, ip := range c.SourceAddr {
-			if ip.Is6() {
-				return ip.AsSlice()
+		case IPVersionIPv6Only:
+			if addr.Is6() {
+				candidates = append(candidates, addr)
 			}
-		}
-	case "ipv4", "4", "0":
-		for _, ip := range c.SourceAddr {
-			if ip.Is4() {
-				return ip.AsSlice()
-			}
-			if ip.Is6() {
-				return ip.AsSlice()
-			}
-		}
-	case "ipv6", "6":
-		for _, ip := range c.SourceAddr {
-			if ip.Is6() {
-				return ip.AsSlice()
-			}
-			if ip.Is4() {
-				return ip.AsSlice()
-			}
+		case IPVersionIPv4Preferred:
+			candidates = append(candidates, addr)
+		case IPVersionIPv6Preferred:
+			candidates = append(candidates, addr)
+		case IPVersionAny:
+			candidates = append(candidates, addr)
 		}
 	}
+
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	// Sort candidates by preference
+	switch ipVersion {
+	case IPVersionIPv4Preferred:
+		// Put IPv4 addresses first
+		var ipv4, ipv6 []netip.Addr
+		for _, addr := range candidates {
+			if addr.Is4() {
+				ipv4 = append(ipv4, addr)
+			} else {
+				ipv6 = append(ipv6, addr)
+			}
+		}
+		candidates = append(ipv4, ipv6...)
+	case IPVersionIPv6Preferred:
+		// Put IPv6 addresses first
+		var ipv4, ipv6 []netip.Addr
+		for _, addr := range candidates {
+			if addr.Is6() {
+				ipv6 = append(ipv6, addr)
+			} else {
+				ipv4 = append(ipv4, addr)
+			}
+		}
+		candidates = append(ipv6, ipv4...)
+	}
+
+	// Pick a random candidate
+	if len(candidates) > 0 {
+		return candidates[rand.Intn(len(candidates))].AsSlice()
+	}
+
 	return nil
 }
 
@@ -107,13 +125,12 @@ func (dnsc *DNSClient) PerformExternalAQuery(fqdn string, QType uint16) ([]dns.R
 	msg := dns.Msg{}
 	msg.RecursionDesired = true
 	msg.SetQuestion(fqdn, QType)
-	msg.SetEdns0(1232, true)
-	dnsLock.Lock()
+	msg.SetEdns0(DNSUDPSize, true)
+
 	if dnsc == nil {
 		return nil, fmt.Errorf("dns client is not initialised")
 	}
 	res, err := dnsc.Resolve(&msg, rdns.ClientInfo{})
-	dnsLock.Unlock()
 	if res == nil {
 		return nil, err
 	}
@@ -121,12 +138,12 @@ func (dnsc *DNSClient) PerformExternalAQuery(fqdn string, QType uint16) ([]dns.R
 }
 
 func processQuestion(c *Config, l zerolog.Logger, q dns.Question, decision acl.Decision) ([]dns.RR, error) {
-	c.RecievedDNS.Inc(1)
+	c.ReceivedDNS.Inc(1)
 	// Check to see if we should respond with our own IP
 	switch decision {
 
 	// Return the public IP.
-	case acl.ProxyIP, acl.Override, acl.Accept: // TODO: accept should be here?
+	case acl.ProxyIP, acl.Override, acl.Accept:
 		c.ProxiedDNS.Inc(1)
 		l.Info().Msgf("returned sniproxy address for domain %s", q.Name)
 
@@ -163,31 +180,31 @@ func processQuestion(c *Config, l zerolog.Logger, q dns.Question, decision acl.D
 }
 
 // lookupDomain looks up a domain name and returns the IP address.
-// version specifies the IP version to lookup, 4 or 6. If 0, any version is picked. currently 0 is ipv4 with ipv6 fallback
-// options are: ipv4 (or 4) and ipv6 (or 6), ipv4only and ipv6only
+// version specifies the IP version preference using the IPVersion constants.
 func (dnsc DNSClient) lookupDomain(domain string, version string) (netip.Addr, error) {
+	ipVersion := ParseIPVersion(version)
 
-	switch version {
-	case "ipv4only":
+	switch ipVersion {
+	case IPVersionIPv4Only:
 		return dnsc.lookupDomain4(domain)
-	case "ipv6only":
+	case IPVersionIPv6Only:
 		return dnsc.lookupDomain6(domain)
-	case "ipv4", "4", "0", "":
-		// try with ipv4, if there's any error, try with ipv6
+	case IPVersionIPv4Preferred, IPVersionAny:
+		// Try IPv4 first, fall back to IPv6
 		ip, err := dnsc.lookupDomain4(domain)
 		if err != nil {
 			return dnsc.lookupDomain6(domain)
 		}
 		return ip, nil
-	case "ipv6", "6":
-		// try with ipv6, if there's any error, try with ipv4
+	case IPVersionIPv6Preferred:
+		// Try IPv6 first, fall back to IPv4
 		ip, err := dnsc.lookupDomain6(domain)
 		if err != nil {
 			return dnsc.lookupDomain4(domain)
 		}
 		return ip, nil
 	}
-	return netip.IPv4Unspecified(), fmt.Errorf("invalid version")
+	return netip.IPv4Unspecified(), fmt.Errorf("invalid IP version preference")
 }
 
 func (dnsc DNSClient) lookupDomain4(domain string) (netip.Addr, error) {
@@ -206,9 +223,9 @@ func (dnsc DNSClient) lookupDomain4(domain string) (netip.Addr, error) {
 			return netip.AddrFrom4([4]byte(rAddrDNS[0].(*dns.A).A.To4())), nil
 		}
 	} else {
-		return netip.IPv4Unspecified(), fmt.Errorf("[DNS] Empty DNS response for %s", domain)
+		return netip.IPv4Unspecified(), fmt.Errorf("empty DNS response for %s", domain)
 	}
-	return netip.IPv4Unspecified(), fmt.Errorf("[DNS] Unknown type %s", dns.TypeToString[rAddrDNS[0].Header().Rrtype])
+	return netip.IPv4Unspecified(), fmt.Errorf("unknown DNS record type %s for %s", dns.TypeToString[rAddrDNS[0].Header().Rrtype], domain)
 }
 
 func (dnsc DNSClient) lookupDomain6(domain string) (netip.Addr, error) {
@@ -220,16 +237,16 @@ func (dnsc DNSClient) lookupDomain6(domain string) (netip.Addr, error) {
 		return netip.IPv6Unspecified(), err
 	}
 	if len(rAddrDNS) > 0 {
-		if rAddrDNS[0].Header().Header().Rrtype == dns.TypeCNAME {
+		if rAddrDNS[0].Header().Rrtype == dns.TypeCNAME {
 			return dnsc.lookupDomain6(rAddrDNS[0].(*dns.CNAME).Target)
 		}
 		if rAddrDNS[0].Header().Rrtype == dns.TypeAAAA {
 			return netip.AddrFrom16([16]byte(rAddrDNS[0].(*dns.AAAA).AAAA.To16())), nil
 		}
 	} else {
-		return netip.IPv6Unspecified(), fmt.Errorf("[DNS] Empty DNS response for %s", domain)
+		return netip.IPv6Unspecified(), fmt.Errorf("empty DNS response for %s", domain)
 	}
-	return netip.IPv6Unspecified(), fmt.Errorf("[DNS] Unknown type %s", dns.TypeToString[rAddrDNS[0].Header().Rrtype])
+	return netip.IPv6Unspecified(), fmt.Errorf("unknown DNS record type %s for %s", dns.TypeToString[rAddrDNS[0].Header().Rrtype], domain)
 }
 
 func handleDNS(c *Config, l zerolog.Logger) dns.HandlerFunc {
@@ -269,9 +286,9 @@ func RunDNS(c *Config, l zerolog.Logger) {
 	if c.BindDNSOverUDP != "" {
 		go func() {
 			serverUDP := &dns.Server{Addr: c.BindDNSOverUDP, Net: "udp"}
+			defer serverUDP.Shutdown()
 			l.Info().Msgf("started udp dns on %s", c.BindDNSOverUDP)
 			err := serverUDP.ListenAndServe()
-			defer serverUDP.Shutdown()
 			if err != nil {
 				l.Error().Msgf("error starting udp dns server: %s", err)
 				l.Info().Msgf("failed to start server: %s\nyou can run the following command to pinpoint which process is listening on your bind\nsudo ss -pltun", c.BindDNSOverUDP)
@@ -279,13 +296,13 @@ func RunDNS(c *Config, l zerolog.Logger) {
 			}
 		}()
 	}
-	// start DNS UDP serverTcp
+	// start DNS TCP serverTcp
 	if c.BindDNSOverTCP != "" {
 		go func() {
 			serverTCP := &dns.Server{Addr: c.BindDNSOverTCP, Net: "tcp"}
+			defer serverTCP.Shutdown()
 			l.Info().Msgf("started tcp dns on %s", c.BindDNSOverTCP)
 			err := serverTCP.ListenAndServe()
-			defer serverTCP.Shutdown()
 			if err != nil {
 				l.Error().Msgf("failed to start server %s", err)
 				l.Info().Msgf("failed to start server: %s\nyou can run the following command to pinpoint which process is listening on your bind\nsudo ss -pltun", c.BindDNSOverUDP)
@@ -293,7 +310,7 @@ func RunDNS(c *Config, l zerolog.Logger) {
 		}()
 	}
 
-	// start DNS UDP serverTls
+	// start DNS TLS serverTls
 	if c.BindDNSOverTLS != "" {
 		go func() {
 			crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
@@ -306,9 +323,9 @@ func RunDNS(c *Config, l zerolog.Logger) {
 			tlsConfig.Certificates = []tls.Certificate{crt}
 
 			serverTLS := &dns.Server{Addr: c.BindDNSOverTLS, Net: "tcp-tls", TLSConfig: tlsConfig}
+			defer serverTLS.Shutdown()
 			l.Info().Msgf("started dot dns on %s", c.BindDNSOverTLS)
 			err = serverTLS.ListenAndServe()
-			defer serverTLS.Shutdown()
 			if err != nil {
 				l.Error().Msg(err.Error())
 			}
@@ -367,14 +384,25 @@ func getDialerFromProxyURL(proxyURL *url.URL) (*rdns.Dialer, error) {
 }
 
 /*
-NewDNSClient creates a DNS Client by parsing a URI and returning the appropriate client for it
-URI string could look like below:
-  - udp://1.1.1.1:53
-  - udp6://[2606:4700:4700::1111]:53
-  - tcp://9.9.9.9:5353
-  - https://dns.adguard.com
-  - quic://dns.adguard.com:8853
-  - tcp-tls://dns.adguard.com:853
+NewDNSClient creates a DNS Client by parsing a URI and returning the appropriate client for it.
+
+Supported URI schemes and formats:
+  - udp://1.1.1.1:53 - Plain DNS over UDP (IPv4)
+  - udp6://[2606:4700:4700::1111]:53 - Plain DNS over UDP (IPv6)
+  - tcp://9.9.9.9:5353 - Plain DNS over TCP (IPv4)
+  - tcp6://[2606:4700:4700::1111]:53 - Plain DNS over TCP (IPv6)
+  - tcp-tls://dns.adguard.com:853 - DNS over TLS (DoT)
+  - tcp-tls6://[2606:4700:4700::1111]:853 - DNS over TLS IPv6
+  - https://dns.adguard.com/dns-query - DNS over HTTPS (DoH)
+  - quic://dns.adguard.com:8853 - DNS over QUIC (DoQ)
+
+Parameters:
+  - C: Configuration object containing network settings
+  - uri: The DNS server URI to connect to
+  - skipVerify: Skip TLS certificate verification (not recommended for production)
+  - proxy: Optional SOCKS5 proxy URL for DNS queries
+
+Returns a configured DNSClient or an error if the URI is invalid or connection fails.
 */
 func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSClient, error) {
 	parsedURL, err := url.Parse(uri)
@@ -411,7 +439,7 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 
 		opt := rdns.DNSClientOptions{
 			LocalAddr:    ldarr,
-			UDPSize:      1300,
+			UDPSize:      DNSClientUDPSize,
 			Dialer:       *dialer,
 			QueryTimeout: DNSTimeout,
 		}
@@ -438,7 +466,7 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 		Address := rdns.AddressWithDefault(host, port)
 		opt := rdns.DNSClientOptions{
 			LocalAddr: ldarr,
-			UDPSize:   1300,
+			UDPSize:   DNSClientUDPSize,
 			Dialer:    *dialer,
 		}
 		id, err := rdns.NewDNSClient("id", Address, "tcp", opt)
@@ -479,11 +507,11 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 
 		transport := "tcp"
 		opt := rdns.DoHClientOptions{
-			Method:        "POST", // TODO: support anything other than POST
+			Method:        "POST",
 			TLSConfig:     tlsConfig,
 			BootstrapAddr: findBootstrapIP(parsedURL.Host, 4),
 			Transport:     transport,
-			LocalAddr:     C.pickSrcAddr("ipv4only"), //TODO:support IPv6
+			LocalAddr:     C.pickSrcAddr("ipv4only"),
 			Dialer:        *dialer,
 		}
 		id, err := rdns.NewDoHClient("id", parsedURL.String(), opt)
@@ -500,8 +528,7 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 
 		opt := rdns.DoQClientOptions{
 			TLSConfig: tlsConfig,
-			LocalAddr: C.pickSrcAddr("ipv4only"), //TODO:support IPv6
-			// Dialer:    *dialer, // BUG: not yet supported
+			LocalAddr: C.pickSrcAddr("ipv4only"),
 		}
 		id, err := rdns.NewDoQClient("id", parsedURL.Host, opt)
 		if err != nil {
@@ -509,5 +536,5 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 		}
 		return &DNSClient{id, C}, nil
 	}
-	return nil, fmt.Errorf("Can't understand the URL")
+	return nil, fmt.Errorf("failed to parse DNS upstream URI %q: unsupported scheme %q", uri, parsedURL.Scheme)
 }

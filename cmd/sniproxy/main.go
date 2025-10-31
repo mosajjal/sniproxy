@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	prometheusmetrics "github.com/deathowl/go-metrics-prometheus"
@@ -201,6 +203,11 @@ func main() {
 	c.BindPrometheus = generalConfig.String("prometheus")
 	c.AllowConnToLocal = generalConfig.Bool("allow_conn_to_local")
 
+	// Validate configuration before proceeding
+	if err := c.Validate(); err != nil {
+		logger.Fatal().Msgf("configuration validation failed: %s", err)
+	}
+
 	var err error
 	c.ACL, err = acl.StartACLs(&logger, k)
 	if err != nil {
@@ -209,12 +216,11 @@ func main() {
 	}
 
 	// set up metrics
-	// TODO: add ipv6 vs ipv4 metrics
-	c.RecievedDNS = metrics.GetOrRegisterCounter("dns.requests.recieved", metrics.DefaultRegistry)
+	c.ReceivedDNS = metrics.GetOrRegisterCounter("dns.requests.received", metrics.DefaultRegistry)
 	c.ProxiedDNS = metrics.GetOrRegisterCounter("dns.requests.proxied", metrics.DefaultRegistry)
-	c.RecievedHTTP = metrics.GetOrRegisterCounter("http.requests.recieved", metrics.DefaultRegistry)
+	c.ReceivedHTTP = metrics.GetOrRegisterCounter("http.requests.received", metrics.DefaultRegistry)
 	c.ProxiedHTTP = metrics.GetOrRegisterCounter("http.requests.proxied", metrics.DefaultRegistry)
-	c.RecievedHTTPS = metrics.GetOrRegisterCounter("https.requests.recieved", metrics.DefaultRegistry)
+	c.ReceivedHTTPS = metrics.GetOrRegisterCounter("https.requests.received", metrics.DefaultRegistry)
 	c.ProxiedHTTPS = metrics.GetOrRegisterCounter("https.requests.proxied", metrics.DefaultRegistry)
 
 	if c.BindPrometheus != "" {
@@ -256,10 +262,21 @@ func main() {
 		if err != nil {
 			logger.Error().Msg(err.Error())
 		}
-		// TODO: split ipv4 and ipv6 to different lists
+		var ipv4Count, ipv6Count int
 		for _, addr := range addrs {
-			c.SourceAddr = append(c.SourceAddr, netip.MustParseAddr(addr.String()))
+			ipAddr, err := netip.ParseAddr(strings.Split(addr.String(), "/")[0])
+			if err != nil {
+				logger.Warn().Msgf("failed to parse address %s: %v", addr.String(), err)
+				continue
+			}
+			c.SourceAddr = append(c.SourceAddr, ipAddr)
+			if ipAddr.Is4() {
+				ipv4Count++
+			} else if ipAddr.Is6() {
+				ipv6Count++
+			}
 		}
+		logger.Info().Msgf("Added %d IPv4 and %d IPv6 source addresses from interface %s", ipv4Count, ipv6Count, c.Interface)
 	}
 
 	// set up dialer based on SOCKS5 configuration
@@ -294,7 +311,15 @@ func main() {
 	}
 	go sniproxy.RunDNS(&c, logger)
 
-	// wait forever.
-	// TODO: add signal handling here
-	select {}
+	// Set up signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	sig := <-sigChan
+	logger.Info().Msgf("received signal %v, shutting down gracefully...", sig)
+
+	// Allow some time for connections to finish
+	// In a production system, you'd want to track active connections and wait for them
+	time.Sleep(2 * time.Second)
+	logger.Info().Msg("shutdown complete")
 }

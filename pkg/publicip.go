@@ -75,16 +75,6 @@ func GetPublicIPv6() (string, error) {
 			externalIP = string(body)
 		}
 
-		// backup method of getting a public IP
-		// if externalIP == "" {
-		// 	// dig +short -6 myip.opendns.com aaaa @2620:0:ccc::2
-		// 	dnsRes, err := c.DnsClient.PerformExternalAQuery("myip.opendns.com.", dns.TypeAAAA)
-		// 	if err != nil {
-		// 		return "", err
-		// 	}
-		// 	externalIP = dnsRes[0].(*dns.AAAA).AAAA.String()
-		// }
-
 		if externalIP != "" {
 			return cleanIPv6(externalIP), nil
 		}

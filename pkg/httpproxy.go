@@ -34,7 +34,9 @@ var passthruResponseHeaderKeys = [...]string{
 	"Vary",
 }
 
-// RunHTTP starts the HTTP server on the configured bind. bind format is 0.0.0.0:80 or similar
+// RunHTTP starts the HTTP proxy server on the specified bind address.
+// The bind address should be in the format "0.0.0.0:80" or similar.
+// This function blocks and should typically be run in a goroutine.
 func RunHTTP(c *Config, bind string, l zerolog.Logger) {
 	handler := http.NewServeMux()
 	l = l.With().Str("service", "http").Str("listener", bind).Logger()
@@ -58,25 +60,23 @@ func RunHTTP(c *Config, bind string, l zerolog.Logger) {
 
 func handle80(c *Config, l zerolog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		c.RecievedHTTP.Inc(1)
+		c.ReceivedHTTP.Inc(1)
 
-		// BUG: this line does not take preferred DNS server or ipv4/ipv6 into account
-		// NOTE: currently, this line leaks DNS Queries to the underlying OS and the OS's default DNS resolver
-		addr, err := net.ResolveTCPAddr("tcp", r.RemoteAddr)
+		// Get the TCP address from RemoteAddr
+		remoteAddr := r.RemoteAddr
 
 		connInfo := acl.ConnInfo{
-			SrcIP:  addr,
+			SrcIP:  &net.TCPAddr{IP: net.ParseIP(remoteAddr[:strings.LastIndex(remoteAddr, ":")])},
 			Domain: r.Host,
 		}
 		acl.MakeDecision(&connInfo, c.ACL)
-		if connInfo.Decision == acl.Reject || connInfo.Decision == acl.OriginIP || err != nil {
-			l.Info().Str("src_ip", r.RemoteAddr).Msgf("rejected request")
+		if connInfo.Decision == acl.Reject || connInfo.Decision == acl.OriginIP {
+			l.Info().Str("src_ip", remoteAddr).Msgf("rejected request")
 			http.Error(w, "Could not reach origin server", 403)
 			return
 		}
 		// if the URL starts with the public IP, it needs to be skipped to avoid loops
-		// TODO: ipv6 should also be checked here
-		if strings.HasPrefix(r.Host, c.PublicIPv4) {
+		if strings.HasPrefix(r.Host, c.PublicIPv4) || (c.PublicIPv6 != "" && strings.HasPrefix(r.Host, c.PublicIPv6)) {
 			l.Warn().Msg("someone is requesting HTTP to sniproxy itself, ignoring...")
 			http.Error(w, "Could not reach origin server", 404)
 			return
@@ -94,24 +94,15 @@ func handle80(c *Config, l zerolog.Logger) http.HandlerFunc {
 
 		// Construct request to send to origin server
 		rr := http.Request{
-			Method: r.Method,
-			URL:    r.URL,
-			Header: hh,
-			Body:   r.Body,
-			// TODO: Is this correct for a 0 value?
-			//       Perhaps a 0 may need to be reinterpreted as -1?
+			Method:        r.Method,
+			URL:           r.URL,
+			Header:        hh,
+			Body:          r.Body,
 			ContentLength: r.ContentLength,
 			Close:         r.Close,
 		}
 		rr.URL.Scheme = "http"
 		rr.URL.Host = r.Host
-
-		// check to see if this host is listed to be processed, otherwise RESET
-		// if !c.AllDomains && inDomainList(r.Host+".") {
-		// 	http.Error(w, "Could not reach origin server", 403)
-		// 	l.Warn().Msg("a client requested connection to " + r.Host + ", but it's not allowed as per configuration.. sending 403")
-		// 	return
-		// }
 
 		// setting up this dialer will enable to use the upstream SOCKS5 if configured
 		transport := http.Transport{
@@ -121,8 +112,8 @@ func handle80(c *Config, l zerolog.Logger) http.HandlerFunc {
 		// Forward request to origin server
 		resp, err := transport.RoundTrip(&rr)
 		if err != nil {
-			// TODO: Passthru more error information
-			l.Error().Msg(err.Error())
+			l.Error().Err(err).Str("host", r.Host).Msg("failed to forward HTTP request")
+			http.Error(w, "Bad Gateway", http.StatusBadGateway)
 			return
 		}
 		defer resp.Body.Close()
@@ -140,18 +131,6 @@ func handle80(c *Config, l zerolog.Logger) http.HandlerFunc {
 		w.WriteHeader(resp.StatusCode)
 
 		// Transfer response from origin server -> client
-		//TODO: error handling
 		io.Copy(w, resp.Body)
-		// if resp.ContentLength > 0 {
-		// 	// (Ignore I/O errors, since there's nothing we can do)
-		// 	io.CopyN(w, resp.Body, resp.ContentLength)
-		// } else if resp.Close { // TODO: Is this condition right?
-		// 	// Copy until EOF or some other error occurs
-		// 	for {
-		// 		if _, err := io.Copy(w, resp.Body); err != nil {
-		// 			break
-		// 		}
-		// 	}
-		// }
 	}
 }

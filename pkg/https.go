@@ -12,6 +12,13 @@ import (
 	"golang.org/x/net/proxy"
 )
 
+const (
+	// TLSClientHelloBufferSize is the buffer size for reading TLS Client Hello
+	// 2048 should be enough for a TLS Client Hello packet. But it could become
+	// problematic if tcp connection is fragmented or too big
+	TLSClientHelloBufferSize = 2048
+)
+
 // checks if the IP is the sniproxy itself
 func isSelf(c *Config, ip netip.Addr) bool {
 	condition1 := ip.IsLoopback() ||
@@ -37,9 +44,9 @@ func isSelf(c *Config, ip netip.Addr) bool {
 
 // handleTLS handles the incoming TLS connection
 func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
-	c.RecievedHTTPS.Inc(1)
+	c.ReceivedHTTPS.Inc(1)
 
-	incoming := make([]byte, 2048) // 2048 should be enough for a TLS Client Hello packet. But it could become problematic if tcp connection is fragmented or too big
+	incoming := make([]byte, TLSClientHelloBufferSize)
 	n, err := conn.Read(incoming)
 	if err != nil {
 		l.Err(err)
@@ -81,10 +88,9 @@ func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 	} else {
 		rAddrTmp, err := c.DNSClient.lookupDomain(sni, c.PreferredVersion)
 		if err != nil {
-			l.Warn().Msg(err.Error())
+			l.Warn().Err(err).Str("sni", sni).Msg("failed to resolve domain")
 			return err
 		}
-		// TODO: handle timeout and context here
 		if isSelf(c, rAddrTmp) && !c.AllowConnToLocal {
 			l.Info().Msg("connection to private IP or self ignored")
 			return nil
@@ -144,8 +150,9 @@ func getPortFromConn(conn net.Conn) int {
 	return portnum
 }
 
-// RunHTTPS starts the HTTPS server on the configured bind
-// "bind" format is as ip:port
+// RunHTTPS starts the HTTPS/TLS proxy server on the specified bind address.
+// The bind address should be in the format "0.0.0.0:443" or similar (ip:port).
+// This function blocks and should typically be run in a goroutine.
 func RunHTTPS(c *Config, bind string, l zerolog.Logger) {
 	l = l.With().Str("service", "https").Str("listener", bind).Logger()
 	if listener, err := net.Listen("tcp", bind); err != nil {

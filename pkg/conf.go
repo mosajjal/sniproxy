@@ -15,6 +15,59 @@ import (
 	"golang.org/x/net/proxy"
 )
 
+// IPVersion represents the preferred IP version for connections
+type IPVersion int
+
+const (
+	// IPVersionAny allows both IPv4 and IPv6 with no preference
+	IPVersionAny IPVersion = iota
+	// IPVersionIPv4Preferred prefers IPv4 but falls back to IPv6
+	IPVersionIPv4Preferred
+	// IPVersionIPv6Preferred prefers IPv6 but falls back to IPv4
+	IPVersionIPv6Preferred
+	// IPVersionIPv4Only only allows IPv4 connections
+	IPVersionIPv4Only
+	// IPVersionIPv6Only only allows IPv6 connections
+	IPVersionIPv6Only
+)
+
+// ParseIPVersion converts a string to IPVersion type
+func ParseIPVersion(s string) IPVersion {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch s {
+	case "ipv4only", "4only":
+		return IPVersionIPv4Only
+	case "ipv6only", "6only":
+		return IPVersionIPv6Only
+	case "ipv4", "4":
+		return IPVersionIPv4Preferred
+	case "ipv6", "6":
+		return IPVersionIPv6Preferred
+	case "any", "0", "":
+		return IPVersionAny
+	default:
+		return IPVersionAny
+	}
+}
+
+// String returns the string representation of IPVersion
+func (v IPVersion) String() string {
+	switch v {
+	case IPVersionIPv4Only:
+		return "ipv4only"
+	case IPVersionIPv6Only:
+		return "ipv6only"
+	case IPVersionIPv4Preferred:
+		return "ipv4"
+	case IPVersionIPv6Preferred:
+		return "ipv6"
+	case IPVersionAny:
+		return "any"
+	default:
+		return "any"
+	}
+}
+
 // Config is the main runtime configuration for the proxy
 type Config struct {
 	PublicIPv4            string   `yaml:"public_ipv4"`
@@ -47,11 +100,11 @@ type Config struct {
 	PreferredVersion string       `yaml:"preferred_version"` // ipv4 (or 4), ipv6 (or 6), ipv4only, ipv6only, any. empty (or 0) means any.
 
 	// metrics
-	RecievedHTTP  metrics.Counter `yaml:"-"`
+	ReceivedHTTP  metrics.Counter `yaml:"-"`
 	ProxiedHTTP   metrics.Counter `yaml:"-"`
-	RecievedHTTPS metrics.Counter `yaml:"-"`
+	ReceivedHTTPS metrics.Counter `yaml:"-"`
 	ProxiedHTTPS  metrics.Counter `yaml:"-"`
-	RecievedDNS   metrics.Counter `yaml:"-"`
+	ReceivedDNS   metrics.Counter `yaml:"-"`
 	ProxiedDNS    metrics.Counter `yaml:"-"`
 }
 
@@ -62,7 +115,42 @@ const (
 	HTTPReadTimeout = 10 * time.Second
 	// HTTPWriteTimeout is the default timeout for HTTP responses
 	HTTPWriteTimeout = 10 * time.Second
+	// DNSUDPSize is the EDNS0 UDP size for DNS queries
+	DNSUDPSize = 1232
+	// DNSClientUDPSize is the UDP size for DNS client options
+	DNSClientUDPSize = 1300
+	// SOCKS5TCPTimeout is the timeout for SOCKS5 TCP connections
+	SOCKS5TCPTimeout = 60
+	// SOCKS5UDPTimeout is the timeout for SOCKS5 UDP connections
+	SOCKS5UDPTimeout = 60
 )
+
+// Validate checks if the configuration is valid and returns an error if it's not.
+// It ensures that at least one DNS binding is configured and other critical settings are valid.
+func (c *Config) Validate() error {
+	if c.BindDNSOverUDP == "" && c.BindDNSOverTCP == "" && c.BindDNSOverTLS == "" && c.BindDNSOverQuic == "" {
+		return fmt.Errorf("at least one DNS binding (UDP, TCP, TLS, or QUIC) is required")
+	}
+
+	if c.UpstreamDNS == "" {
+		return fmt.Errorf("upstream DNS server is required")
+	}
+
+	if c.BindHTTP == "" && c.BindHTTPS == "" {
+		return fmt.Errorf("at least one HTTP or HTTPS binding is required")
+	}
+
+	if c.PublicIPv4 == "" && c.PublicIPv6 == "" {
+		return fmt.Errorf("at least one public IP (IPv4 or IPv6) is required")
+	}
+
+	// Validate TLS configuration if TLS/QUIC DNS is enabled
+	if (c.BindDNSOverTLS != "" || c.BindDNSOverQuic != "") && (c.TLSCert == "" || c.TLSKey == "") {
+		return fmt.Errorf("TLS certificate and key are required for DNS over TLS/QUIC")
+	}
+
+	return nil
+}
 
 // below are some functions to help populating some config fields based on other config fields
 
@@ -85,7 +173,7 @@ func (c *Config) SetDialer(logger zerolog.Logger) error {
 		socksAuth := new(proxy.Auth)
 		socksAuth.User = uri.User.Username()
 		socksAuth.Password, _ = uri.User.Password()
-		c.Dialer, err = socks5.NewClient(uri.Host, socksAuth.User, socksAuth.Password, 60, 60)
+		c.Dialer, err = socks5.NewClient(uri.Host, socksAuth.User, socksAuth.Password, SOCKS5TCPTimeout, SOCKS5UDPTimeout)
 		if err != nil {
 			// non-fatal error message
 			logger.Error().Msg(err.Error())
@@ -132,7 +220,7 @@ func parseRanges(portRange ...string) ([]int, error) {
 		if strings.Index(portRange, "-") == -1 {
 			port, err := strconv.Atoi(portRange)
 			if err != nil {
-				return nil, fmt.Errorf("error parsing port: %v", err)
+				return nil, fmt.Errorf("error parsing port: %w", err)
 			}
 			ports = append(ports, port)
 		} else {
@@ -142,11 +230,11 @@ func parseRanges(portRange ...string) ([]int, error) {
 
 			num1, err := strconv.Atoi(num1Str)
 			if err != nil {
-				return nil, fmt.Errorf("error parsing port range: %v", err)
+				return nil, fmt.Errorf("error parsing port range start %q: %w", num1Str, err)
 			}
 			num2, err := strconv.Atoi(num2Str)
 			if err != nil {
-				return nil, fmt.Errorf("error parsing port range: %v", err)
+				return nil, fmt.Errorf("error parsing port range end %q: %w", num2Str, err)
 			}
 			for i := num1; i <= num2; i++ {
 				ports = append(ports, i)
@@ -161,14 +249,14 @@ func parseBinders(bind string, additional []string) ([]string, error) {
 	// get the bind address from bind
 	bindAddPort, err := netip.ParseAddrPort(bind)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing bind address: %v", err)
+		return nil, fmt.Errorf("error parsing bind address %q: %w", bind, err)
 	}
 	bindAddresses := []string{bindAddPort.String()}
 
 	// now all the ranges must be parsed, and each of them converted into a bind address and added to the list
 	portRange, err := parseRanges(additional...)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing bind address range: %v", err)
+		return nil, fmt.Errorf("error parsing bind address range: %w", err)
 	}
 	for _, port := range portRange {
 		bindAddresses = append(bindAddresses, fmt.Sprintf("%s:%d", bindAddPort.Addr(), port))
@@ -184,7 +272,7 @@ func parseBinders(bind string, additional []string) ([]string, error) {
 func (c *Config) SetBindHTTPListeners(_ zerolog.Logger) error {
 	bindAddresses, err := parseBinders(c.BindHTTP, c.BindHTTPAdditional)
 	if err != nil {
-		return fmt.Errorf("error parsing bind addresses for HTTP: %v", err)
+		return fmt.Errorf("error parsing bind addresses for HTTP: %w", err)
 	}
 	c.BindHTTPListeners = bindAddresses
 	return nil
@@ -194,7 +282,7 @@ func (c *Config) SetBindHTTPListeners(_ zerolog.Logger) error {
 func (c *Config) SetBindHTTPSListeners(_ zerolog.Logger) error {
 	bindAddresses, err := parseBinders(c.BindHTTPS, c.BindHTTPSAdditional)
 	if err != nil {
-		return fmt.Errorf("error parsing bind addresses for HTTPS: %v", err)
+		return fmt.Errorf("error parsing bind addresses for HTTPS: %w", err)
 	}
 	c.BindHTTPSListeners = bindAddresses
 	return nil

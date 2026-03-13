@@ -27,6 +27,7 @@ type cidr struct {
 	RejectRanger    cidranger.Ranger
 	logger          *zerolog.Logger
 	priority        uint
+	stopCh          chan struct{}
 }
 
 func (d *cidr) LoadCIDRCSV(path string) error {
@@ -106,9 +107,17 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 }
 
 func (d *cidr) loadCIDRCSVWorker(path string, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	// Initial load
+	_ = d.LoadCIDRCSV(path)
 	for {
-		_ = d.LoadCIDRCSV(path)
-		time.Sleep(interval)
+		select {
+		case <-d.stopCh:
+			return
+		case <-ticker.C:
+			_ = d.LoadCIDRCSV(path)
+		}
 	}
 }
 
@@ -156,8 +165,13 @@ func (d *cidr) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	d.Path = c.String("path")
 	d.priority = uint(c.Int("priority")) //nolint:gosec // G115 - priority is a small non-negative config value
 	d.RefreshInterval = c.Duration("refresh_interval")
+	d.stopCh = make(chan struct{})
 	go d.loadCIDRCSVWorker(d.Path, d.RefreshInterval)
 	return nil
+}
+
+func (d *cidr) Stop() {
+	close(d.stopCh)
 }
 
 // make the acl available at import time

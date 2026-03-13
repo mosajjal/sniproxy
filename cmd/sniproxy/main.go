@@ -325,8 +325,11 @@ func main() {
 	sig := <-sigChan
 	logger.Info().Msgf("received signal %v, shutting down gracefully...", sig)
 
-	// Allow some time for connections to finish
-	// In a production system, you'd want to track active connections and wait for them
+	// Stop ACL refresh goroutines
+	acl.StopACLs(c.ACL)
+	logger.Info().Msg("ACL refresh goroutines stopped")
+
+	// Allow some time for in-flight connections to finish
 	time.Sleep(2 * time.Second)
 	logger.Info().Msg("shutdown complete")
 }

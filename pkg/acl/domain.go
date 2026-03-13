@@ -26,6 +26,7 @@ type domain struct {
 	routeFQDNs      map[string]uint8
 	logger          *zerolog.Logger
 	priority        uint
+	stopCh          chan struct{}
 }
 
 const (
@@ -146,11 +147,21 @@ func (d *domain) LoadDomainsCsv(Filename string) error {
 }
 
 func (d *domain) LoadDomainsCSVWorker(path string, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	// Initial load
+	if err := d.LoadDomainsCsv(path); err != nil {
+		d.logger.Warn().Err(err).Msg("failed to load domain list")
+	}
 	for {
-		if err := d.LoadDomainsCsv(path); err != nil {
-			d.logger.Warn().Err(err).Msg("failed to reload domain list")
+		select {
+		case <-d.stopCh:
+			return
+		case <-ticker.C:
+			if err := d.LoadDomainsCsv(path); err != nil {
+				d.logger.Warn().Err(err).Msg("failed to reload domain list")
+			}
 		}
-		time.Sleep(interval)
 	}
 }
 
@@ -189,8 +200,13 @@ func (d *domain) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	d.Path = c.String("path")
 	d.priority = uint(c.Int("priority")) //nolint:gosec // G115 - priority is a small non-negative config value
 	d.RefreshInterval = c.Duration("refresh_interval")
+	d.stopCh = make(chan struct{})
 	go d.LoadDomainsCSVWorker(d.Path, d.RefreshInterval)
 	return nil
+}
+
+func (d *domain) Stop() {
+	close(d.stopCh)
 }
 
 // make domain available to the ACL system at import time

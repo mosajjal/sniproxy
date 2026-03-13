@@ -33,6 +33,7 @@ type geoIP struct {
 	mmdb             *maxminddb.Reader
 	logger           *zerolog.Logger
 	priority         uint
+	stopCh           chan struct{}
 }
 
 func toLowerSlice(in []string) (out []string) {
@@ -105,12 +106,18 @@ func (g *geoIP) initializeGeoIP() error {
 	if err := g.loadMMDB(); err != nil {
 		return err
 	}
-	for range time.NewTicker(g.Refresh).C {
-		if err := g.loadMMDB(); err != nil {
-			g.logger.Warn().Err(err).Msg("failed to reload MMDB")
+	ticker := time.NewTicker(g.Refresh)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-g.stopCh:
+			return nil
+		case <-ticker.C:
+			if err := g.loadMMDB(); err != nil {
+				g.logger.Warn().Err(err).Msg("failed to reload MMDB")
+			}
 		}
 	}
-	return nil
 }
 
 // checkGeoIPSkip checks an IP address against the exclude and include lists and returns
@@ -189,12 +196,17 @@ func (g *geoIP) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	g.AllowedCountries = toLowerSlice(c.Strings("allowed"))
 	g.BlockedCountries = toLowerSlice(c.Strings("blocked"))
 	g.Refresh = c.Duration("refresh_interval")
+	g.stopCh = make(chan struct{})
 	go func() {
 		if err := g.initializeGeoIP(); err != nil {
 			g.logger.Error().Err(err).Msg("failed to initialize geoip")
 		}
 	}()
 	return nil
+}
+
+func (g *geoIP) Stop() {
+	close(g.stopCh)
 }
 
 // make the geoIP available at import time

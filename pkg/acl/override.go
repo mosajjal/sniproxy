@@ -93,6 +93,10 @@ func (o override) Priority() uint {
 	return o.priority
 }
 
+func (o *override) Stop() {
+	// override has no background goroutines to stop
+}
+
 func (o *override) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	DNSBind := c.String("general.bind_dns_over_udp")
 	c = c.Cut(fmt.Sprintf("acl.%s", o.Name()))

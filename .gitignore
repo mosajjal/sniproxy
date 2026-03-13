@@ -25,4 +25,4 @@ _testmain.go
 config.yaml
 
 .TODO.md
-sniproxy
+/sniproxy

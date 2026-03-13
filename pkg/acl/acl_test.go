@@ -146,7 +146,7 @@ func TestMakeDecision(t *testing.T) {
 	// Run the test cases
 	for _, tc := range cases {
 		t.Run(tc.config, func(t *testing.T) {
-			_ = MakeDecision(tc.connInfo, getAcls(&logger, tc.config))
+			_ = MakeDecision(tc.connInfo, getAcls(t, &logger, tc.config))
 			if tc.expected != tc.connInfo.Decision {
 				t.Errorf("MakeDecision (domain=%v,ip=%v,config=%v) decided %v, expected %v", tc.connInfo.Domain, tc.connInfo.SrcIP, tc.config, tc.connInfo.Decision, tc.expected)
 			}
@@ -176,7 +176,8 @@ func TestReverse(t *testing.T) {
 	}
 }
 
-func getAcls(log *zerolog.Logger, config string) []ACL {
+func getAcls(t *testing.T, log *zerolog.Logger, config string) []ACL {
+	t.Helper()
 	var k = koanf.New(".")
 	if err := k.Load(rawbytes.Provider([]byte(config)), yaml.Parser()); err != nil {
 		log.Fatal().Msgf("error loading config file: %v", err)
@@ -185,6 +186,7 @@ func getAcls(log *zerolog.Logger, config string) []ACL {
 	if err != nil {
 		panic(err)
 	}
+	t.Cleanup(func() { StopACLs(a) })
 	// we need this to give acl time to (re)load
 	time.Sleep(1 * time.Second)
 	return a

@@ -48,6 +48,7 @@ type ACL interface {
 	Name() string
 	Priority() uint
 	ConfigAndStart(*zerolog.Logger, *koanf.Koanf) error
+	Stop()
 }
 
 // StartACLs starts all the ACLs that have been configured and registered.
@@ -90,6 +91,13 @@ func MakeDecision(c *ConnInfo, a []ACL) error {
 		c.Decision = Accept
 	}
 	return nil
+}
+
+// StopACLs stops all running ACLs, terminating their refresh goroutines.
+func StopACLs(a []ACL) {
+	for _, acl := range a {
+		acl.Stop()
+	}
 }
 
 // each ACL should register itself by appending itself to this list

@@ -1,4 +1,4 @@
-// sniproxy's main CLI entrpoint.
+// sniproxy's main CLI entrypoint.
 package main
 
 import (
@@ -120,10 +120,12 @@ func main() {
 		}
 	}
 	// load environment variables starting with envPrefix
-	k.Load(env.Provider(envPrefix, ".", func(s string) string {
-		return strings.Replace(strings.ToLower(
-			strings.TrimPrefix(s, envPrefix)), "__", ".", -1)
-	}), nil)
+	if err := k.Load(env.Provider(envPrefix, ".", func(s string) string {
+		return strings.ReplaceAll(strings.ToLower(
+			strings.TrimPrefix(s, envPrefix)), "__", ".")
+	}), nil); err != nil {
+		logger.Warn().Err(err).Msg("failed to load environment variables")
+	}
 
 	logger.Info().Msgf("starting sniproxy. version %s, commit %s", version, commit)
 
@@ -244,7 +246,7 @@ func main() {
 		logger.Info().Msg("certificate was not provided, generating a self signed cert in temp directory")
 		_, _, err := doh.GenerateSelfSignedCertKey(hostname, nil, nil, os.TempDir())
 		if err != nil {
-			logger.Error().Msgf("error while generating self-signed cert: %s", err)
+			logger.Fatal().Err(err).Msg("failed to generate self-signed certificate")
 		}
 		c.TLSCert = filepath.Join(os.TempDir(), hostname+".crt")
 		c.TLSKey = filepath.Join(os.TempDir(), hostname+".key")
@@ -256,11 +258,11 @@ func main() {
 		logger.Info().Msgf("Using interface %s", c.Interface)
 		ief, err := net.InterfaceByName(c.Interface)
 		if err != nil {
-			logger.Error().Msg(err.Error())
+			logger.Fatal().Err(err).Msgf("failed to find interface %s", c.Interface)
 		}
 		addrs, err := ief.Addrs()
 		if err != nil {
-			logger.Error().Msg(err.Error())
+			logger.Fatal().Err(err).Msgf("failed to get addresses for interface %s", c.Interface)
 		}
 		var ipv4Count, ipv6Count int
 		for _, addr := range addrs {

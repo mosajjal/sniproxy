@@ -1,11 +1,13 @@
 package sniproxy
 
 import (
-	"fmt"
 	"io"
 	"net"
 	"net/netip"
+	"slices"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/mosajjal/sniproxy/v2/pkg/acl"
 	"github.com/rs/zerolog"
@@ -17,27 +19,41 @@ const (
 	// 2048 should be enough for a TLS Client Hello packet. But it could become
 	// problematic if tcp connection is fragmented or too big
 	TLSClientHelloBufferSize = 2048
+
+	// tlsReadTimeout is the deadline for reading the TLS ClientHello
+	tlsReadTimeout = 10 * time.Second
+
+	// upstreamDialTimeout is the deadline for dialing upstream targets
+	upstreamDialTimeout = 10 * time.Second
 )
 
-// checks if the IP is the sniproxy itself
-func isSelf(c *Config, ip netip.Addr) bool {
-	condition1 := ip.IsLoopback() ||
-		ip.IsPrivate() || ip == (netip.IPv4Unspecified())
+// tlsBufferPool reuses buffers for reading TLS ClientHello packets
+var tlsBufferPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, TLSClientHelloBufferSize)
+		return &buf
+	},
+}
 
-	if c.PublicIPv4 != "" {
-		condition1 = condition1 || (ip == netip.MustParseAddr(c.PublicIPv4))
-	}
-	if c.PublicIPv6 != "" {
-		condition1 = condition1 || (ip == netip.MustParseAddr(c.PublicIPv6))
-	}
-	if condition1 {
+// isSelf checks if the IP is the sniproxy itself
+func isSelf(c *Config, ip netip.Addr) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip == netip.IPv4Unspecified() {
 		return true
 	}
 
-	for _, v := range c.SourceAddr {
-		if ip == v {
+	if c.PublicIPv4 != "" {
+		if parsed, err := netip.ParseAddr(c.PublicIPv4); err == nil && ip == parsed {
 			return true
 		}
+	}
+	if c.PublicIPv6 != "" {
+		if parsed, err := netip.ParseAddr(c.PublicIPv6); err == nil && ip == parsed {
+			return true
+		}
+	}
+
+	if slices.Contains(c.SourceAddr, ip) {
+		return true
 	}
 	return false
 }
@@ -45,21 +61,29 @@ func isSelf(c *Config, ip netip.Addr) bool {
 // handleTLS handles the incoming TLS connection
 func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 	c.ReceivedHTTPS.Inc(1)
+	defer conn.Close()
 
-	incoming := make([]byte, TLSClientHelloBufferSize)
+	bufPtr := tlsBufferPool.Get().(*[]byte)
+	incoming := *bufPtr
+	defer tlsBufferPool.Put(bufPtr)
+
+	// Set a read deadline to prevent slowloris-style attacks
+	conn.SetReadDeadline(time.Now().Add(tlsReadTimeout))
 	n, err := conn.Read(incoming)
 	if err != nil {
-		l.Err(err)
+		l.Error().Err(err).Msg("failed to read from connection")
 		return err
 	}
+	// Clear the read deadline for proxied data
+	conn.SetReadDeadline(time.Time{})
+
 	sni, err := GetHostname(incoming[:n])
 	if err != nil {
-		l.Err(err)
+		l.Error().Err(err).Msg("failed to extract SNI")
 		return err
 	}
 	if !isValidFQDN(sni) {
 		l.Warn().Msgf("Invalid SNI: %s", sni)
-		conn.Close()
 		return nil
 	}
 	connInfo := acl.ConnInfo{
@@ -70,19 +94,17 @@ func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 
 	if connInfo.Decision == acl.Reject {
 		l.Warn().Msgf("ACL rejection srcip=%s", conn.RemoteAddr().String())
-		conn.Close()
 		return nil
 	}
 	// check SNI against domainlist for an extra layer of security
 	if connInfo.Decision == acl.OriginIP {
 		l.Warn().Str("sni", sni).Str("srcip", conn.RemoteAddr().String()).Msg("connection request rejected since it's not allowed as per ACL.. resetting TCP")
-		conn.Close()
 		return nil
 	}
 	rPort := getPortFromConn(conn) // by default, we'll use the listening port as the destination port
 	var rAddr net.IP
 	if connInfo.Decision == acl.Override {
-		l.Debug().Msgf("overriding destination IP %s with %s as per override ACL", rAddr.String(), connInfo.DstIP.String())
+		l.Debug().Msgf("overriding destination with %s as per override ACL", connInfo.DstIP.String())
 		rAddr = connInfo.DstIP.IP
 		rPort = connInfo.DstIP.Port
 	} else {
@@ -102,27 +124,34 @@ func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 	var target net.Conn
 	// if the proxy is not set, or the destination IP is localhost, we'll use the OS's TCP stack and won't go through the SOCKS5 proxy
 	if c.Dialer == proxy.Direct || rAddr.IsLoopback() {
-		// with the manipulation of the soruce address, we can set the outbound interface
+		// with the manipulation of the source address, we can set the outbound interface
 		srcAddr := net.TCPAddr{
 			IP:   c.pickSrcAddr(c.PreferredVersion),
 			Port: 0,
 		}
-		target, err = net.DialTCP("tcp", &srcAddr, &net.TCPAddr{IP: rAddr, Port: rPort})
+		dialer := net.Dialer{
+			Timeout:   upstreamDialTimeout,
+			LocalAddr: &srcAddr,
+		}
+		target, err = dialer.Dial("tcp", net.JoinHostPort(rAddr.String(), strconv.Itoa(rPort)))
 		if err != nil {
 			l.Info().Msgf("could not connect to target with error: %s", err)
-			conn.Close()
 			return err
 		}
 	} else {
-		target, err = c.Dialer.Dial("tcp", fmt.Sprintf("%s:%d", rAddr, rPort))
+		target, err = c.Dialer.Dial("tcp", net.JoinHostPort(rAddr.String(), strconv.Itoa(rPort)))
 		if err != nil {
 			l.Info().Msgf("could not connect to target with error: %s", err)
-			conn.Close()
 			return err
 		}
 	}
+	defer target.Close()
+
 	c.ProxiedHTTPS.Inc(1)
-	target.Write(incoming[:n])
+	if _, err := target.Write(incoming[:n]); err != nil {
+		l.Error().Err(err).Msg("failed to write ClientHello to target")
+		return err
+	}
 
 	errc := make(chan error, 2)
 	go proxyCopy(errc, conn, target)
@@ -133,9 +162,6 @@ func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 }
 
 func proxyCopy(errc chan<- error, dst, src net.Conn) {
-	defer src.Close()
-	defer dst.Close()
-
 	_, err := io.Copy(dst, src)
 	errc <- err
 }

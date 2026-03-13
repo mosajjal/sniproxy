@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-collections/collections/tst"
@@ -19,6 +20,7 @@ import (
 type domain struct {
 	Path            string        `yaml:"domain.path"`
 	RefreshInterval time.Duration `yaml:"domain.refresh_interval"`
+	mu              sync.RWMutex
 	routePrefixes   *tst.TernarySearchTree
 	routeSuffixes   *tst.TernarySearchTree
 	routeFQDNs      map[string]uint8
@@ -33,11 +35,15 @@ const (
 )
 
 // inDomainList returns true if the domain is meant to be SKIPPED and not go through sni proxy
-func (d domain) inDomainList(fqdn string) bool {
+func (d *domain) inDomainList(fqdn string) bool {
 	if !strings.HasSuffix(fqdn, ".") {
 		fqdn = fqdn + "."
 	}
 	fqdnLower := strings.ToLower(fqdn)
+
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
 	// check for fqdn match
 	if d.routeFQDNs[fqdnLower] == matchFQDN {
 		return false
@@ -67,10 +73,8 @@ func reverse(s string) string {
 	return string(r)
 }
 
-// LoadDomainsCsv loads a domains Csv file/URL. returns 3 parameters:
-// 1. a TST for all the prefixes (type 1)
-// 2. a TST for all the suffixes (type 2)
-// 3. a hashtable for all the full match fqdn (type 3)
+// LoadDomainsCsv loads a domains Csv file/URL.
+// It builds new data structures locally then atomically swaps them in under a write lock.
 func (d *domain) LoadDomainsCsv(Filename string) error {
 	d.logger.Info().Msg("Loading the domain from file/url")
 	var scanner *bufio.Scanner
@@ -100,45 +104,55 @@ func (d *domain) LoadDomainsCsv(Filename string) error {
 		defer file.Close()
 		scanner = bufio.NewScanner(file)
 	}
+
+	// Build new data structures locally to avoid holding the lock during I/O
+	newPrefixes := tst.New()
+	newSuffixes := tst.New()
+	newFQDNs := make(map[string]uint8)
+
 	for scanner.Scan() {
 		lowerCaseLine := strings.ToLower(scanner.Text())
-		// split the line by comma to understand thed.logger.c
 		fqdn := strings.Split(lowerCaseLine, ",")
 		if len(fqdn) != 2 {
 			d.logger.Info().Msg(lowerCaseLine + " is not a valid line, assuming FQDN")
 			fqdn = []string{lowerCaseLine, "fqdn"}
 		}
-		// add the fqdn to the hashtable with its type
 		switch entryType := fqdn[1]; entryType {
 		case "prefix":
-			d.routeFQDNs[fqdn[0]] = matchPrefix
-			d.routePrefixes.Insert(fqdn[0], fqdn[0])
+			newFQDNs[fqdn[0]] = matchPrefix
+			newPrefixes.Insert(fqdn[0], fqdn[0])
 		case "suffix":
-			d.routeFQDNs[fqdn[0]] = matchSuffix
-			// suffix match is much faster if we reverse the strings and match for prefix
-			d.routeSuffixes.Insert(reverse(fqdn[0]), fqdn[0])
+			newFQDNs[fqdn[0]] = matchSuffix
+			newSuffixes.Insert(reverse(fqdn[0]), fqdn[0])
 		case "fqdn":
-			d.routeFQDNs[fqdn[0]] = matchFQDN
+			newFQDNs[fqdn[0]] = matchFQDN
 		default:
-			//d.logger.Warnf("%s is not a valid line, assuming fqdn", lowerCaseLine)
 			d.logger.Info().Msg(lowerCaseLine + " is not a valid line, assuming FQDN")
-			d.routeFQDNs[fqdn[0]] = matchFQDN
+			newFQDNs[fqdn[0]] = matchFQDN
 		}
 	}
-	d.logger.Info().Msgf("%s loaded with %d prefix, %d suffix and %d fqdn", Filename, d.routePrefixes.Len(), d.routeSuffixes.Len(), len(d.routeFQDNs)-d.routePrefixes.Len()-d.routeSuffixes.Len())
+
+	// Atomically swap under write lock
+	d.mu.Lock()
+	d.routePrefixes = newPrefixes
+	d.routeSuffixes = newSuffixes
+	d.routeFQDNs = newFQDNs
+	d.mu.Unlock()
+
+	d.logger.Info().Msgf("%s loaded with %d prefix, %d suffix and %d fqdn", Filename, newPrefixes.Len(), newSuffixes.Len(), len(newFQDNs)-newPrefixes.Len()-newSuffixes.Len())
 
 	return nil
 }
 
-func (d *domain) LoadDomainsCSVWorker() {
+func (d *domain) LoadDomainsCSVWorker(path string, interval time.Duration) {
 	for {
-		d.LoadDomainsCsv(d.Path)
-		time.Sleep(d.RefreshInterval)
+		d.LoadDomainsCsv(path)
+		time.Sleep(interval)
 	}
 }
 
-// implement domain as an ACL interface
-func (d domain) Decide(c *ConnInfo) error {
+// Decide implements the ACL interface
+func (d *domain) Decide(c *ConnInfo) error {
 	d.logger.Debug().Any("conn", c).Msg("deciding on domain acl")
 
 	if c.Decision == Reject {
@@ -156,10 +170,10 @@ func (d domain) Decide(c *ConnInfo) error {
 	d.logger.Debug().Any("conn", c).Msg("decided on domain acl")
 	return nil
 }
-func (d domain) Name() string {
+func (d *domain) Name() string {
 	return "domain"
 }
-func (d domain) Priority() uint {
+func (d *domain) Priority() uint {
 	return d.priority
 }
 
@@ -172,7 +186,7 @@ func (d *domain) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	d.Path = c.String("path")
 	d.priority = uint(c.Int("priority"))
 	d.RefreshInterval = c.Duration("refresh_interval")
-	go d.LoadDomainsCSVWorker()
+	go d.LoadDomainsCSVWorker(d.Path, d.RefreshInterval)
 	return nil
 }
 

@@ -212,12 +212,12 @@ func (c *Config) SetDNSClient(logger zerolog.Logger) error {
 }
 
 // parseRanges parses a range of ports or a single port. It returns a list of ports
-func parseRanges(portRange ...string) ([]int, error) {
+func parseRanges(portRanges ...string) ([]int, error) {
 	var ports []int
 
-	for _, portRange := range portRange {
+	for _, portRange := range portRanges {
 
-		if strings.Index(portRange, "-") == -1 {
+		if !strings.Contains(portRange, "-") {
 			port, err := strconv.Atoi(portRange)
 			if err != nil {
 				return nil, fmt.Errorf("error parsing port: %w", err)

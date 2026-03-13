@@ -21,6 +21,9 @@ import (
 
 var tlsHeaderLength = 5
 
+// fqdnRegex is compiled once at package level for performance
+var fqdnRegex = regexp.MustCompile(`^(?i:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,})$`)
+
 // GetHostname extracts the Server Name Indication (SNI) from a TLS Client Hello packet.
 // This function takes raw TLS handshake data and returns the hostname requested by the client.
 // It returns an error if the data doesn't contain a valid TLS Client Hello or SNI extension.
@@ -154,8 +157,6 @@ func getExtensionBlock(data []byte) ([]byte, error) {
 
 // isValidFQDN validates if the given hostname is a valid FQDN
 func isValidFQDN(hostname string) bool {
-	// Regular expression to match a valid FQDN
-	var fqdnRegex = regexp.MustCompile(`^(?i:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,})$`)
 	return fqdnRegex.MatchString(hostname)
 }
 

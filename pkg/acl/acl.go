@@ -50,12 +50,13 @@ type ACL interface {
 	ConfigAndStart(*zerolog.Logger, *koanf.Koanf) error
 }
 
-// StartACLs starts all the ACLs that have been configured and registered
+// StartACLs starts all the ACLs that have been configured and registered.
+// The returned slice is sorted by priority so MakeDecision does not need to re-sort.
 func StartACLs(log *zerolog.Logger, k *koanf.Koanf) ([]ACL, error) {
 	var a []ACL
 	aclK := k.Cut("acl")
 	for _, acl := range availableACLs {
-		// cut each konaf based on the name of the ACL
+		// cut each koanf based on the name of the ACL
 		// only configure if the "enabled" key is set to true
 		if !aclK.Bool(fmt.Sprintf("%s.enabled", (acl).Name())) {
 			continue
@@ -71,12 +72,14 @@ func StartACLs(log *zerolog.Logger, k *koanf.Koanf) ([]ACL, error) {
 		log.Info().Msgf("started ACL: '%s'", (acl).Name())
 
 	}
+	// Sort once at startup so MakeDecision doesn't need to sort per-call
+	sort.Sort(byPriority(a))
 	return a, nil
 }
 
-// MakeDecision loops through all the ACLs and makes a decision for the connection
+// MakeDecision loops through all the ACLs and makes a decision for the connection.
+// ACLs must already be sorted by priority (done in StartACLs).
 func MakeDecision(c *ConnInfo, a []ACL) error {
-	sort.Sort(byPriority(a))
 	for _, acl := range a {
 		if err := acl.Decide(c); err != nil {
 			return err

@@ -1,6 +1,7 @@
 package sniproxy
 
 import (
+	"context"
 	"io"
 	"net"
 	"net/http"
@@ -24,7 +25,7 @@ var passthruResponseHeaderKeys = [...]string{
 	"Content-Encoding",
 	"Content-Language",
 	"Content-Type",
-	"Cache-Control", // TODO: Is this valid in a response?
+	"Cache-Control",
 	"Date",
 	"Etag",
 	"Expires",
@@ -41,7 +42,14 @@ func RunHTTP(c *Config, bind string, l zerolog.Logger) {
 	handler := http.NewServeMux()
 	l = l.With().Str("service", "http").Str("listener", bind).Logger()
 
-	handler.HandleFunc("/", handle80(c, l))
+	// Create transport once and reuse across requests for connection pooling
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return c.Dialer.Dial(network, addr)
+		},
+	}
+
+	handler.HandleFunc("/", handle80(c, l, transport))
 
 	s := &http.Server{
 		Addr:           bind,
@@ -53,12 +61,11 @@ func RunHTTP(c *Config, bind string, l zerolog.Logger) {
 
 	l.Info().Str("bind", bind).Msg("starting http server")
 	if err := s.ListenAndServe(); err != nil {
-		l.Error().Msg(err.Error())
-		panic(-1)
+		l.Fatal().Err(err).Msg("failed to start http server")
 	}
 }
 
-func handle80(c *Config, l zerolog.Logger) http.HandlerFunc {
+func handle80(c *Config, l zerolog.Logger, transport *http.Transport) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c.ReceivedHTTP.Inc(1)
 
@@ -103,11 +110,6 @@ func handle80(c *Config, l zerolog.Logger) http.HandlerFunc {
 		}
 		rr.URL.Scheme = "http"
 		rr.URL.Host = r.Host
-
-		// setting up this dialer will enable to use the upstream SOCKS5 if configured
-		transport := http.Transport{
-			Dial: c.Dialer.Dial,
-		}
 
 		// Forward request to origin server
 		resp, err := transport.RoundTrip(&rr)

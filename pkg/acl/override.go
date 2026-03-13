@@ -27,8 +27,17 @@ type override struct {
 	logger       *zerolog.Logger
 }
 
+const maxFreePortRetries = 10
+
 // GetFreePort returns a random open port
 func GetFreePort() (int, error) {
+	return getFreePortWithRetry(maxFreePortRetries)
+}
+
+func getFreePortWithRetry(retries int) (int, error) {
+	if retries <= 0 {
+		return 0, fmt.Errorf("failed to find a free port after %d retries", maxFreePortRetries)
+	}
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
 		return 0, err
@@ -36,7 +45,7 @@ func GetFreePort() (int, error) {
 
 	l, err := net.ListenTCP("tcp", addr)
 	if err != nil {
-		return GetFreePort()
+		return getFreePortWithRetry(retries - 1)
 	}
 	defer l.Close()
 	return l.Addr().(*net.TCPAddr).Port, nil
@@ -126,7 +135,7 @@ func (o *override) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error 
 	return nil
 }
 
-// make domain available to the ACL system at import time
+// make override available to the ACL system at import time
 func init() {
 	availableACLs = append(availableACLs, &override{})
 }

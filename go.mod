@@ -20,7 +20,6 @@ require (
 	github.com/spf13/cobra v1.9.1
 	github.com/txthinking/socks5 v0.0.0-20230325130024-4230056ae301
 	github.com/yl2chen/cidranger v1.0.2
-	golang.org/x/exp v0.0.0-20250718183923-645b1fa84792
 	golang.org/x/net v0.47.0
 	inet.af/tcpproxy v0.0.0-20231102063150-2862066fc2a9
 )

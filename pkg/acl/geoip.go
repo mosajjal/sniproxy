@@ -6,13 +6,14 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/knadh/koanf"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
-	"golang.org/x/exp/slices"
 )
 
 // geoIP is an ACL that checks the geolocation of incoming connections and
@@ -28,6 +29,7 @@ type geoIP struct {
 	AllowedCountries []string
 	BlockedCountries []string
 	Refresh          time.Duration
+	mu               sync.RWMutex
 	mmdb             *maxminddb.Reader
 	logger           *zerolog.Logger
 	priority         uint
@@ -41,13 +43,16 @@ func toLowerSlice(in []string) (out []string) {
 }
 
 // getCountry returns the country code for the given IP address in ISO format
-func (g geoIP) getCountry(ipAddr string) (string, error) {
+func (g *geoIP) getCountry(ipAddr string) (string, error) {
 	ip := net.ParseIP(ipAddr)
 	var record struct {
 		Country struct {
 			ISOCode string `maxminddb:"iso_code"`
 		} `maxminddb:"country"`
-	} // Or any appropriate struct
+	}
+
+	g.mu.RLock()
+	defer g.mu.RUnlock()
 
 	err := g.mmdb.Lookup(ip, &record)
 	if err != nil {
@@ -56,11 +61,10 @@ func (g geoIP) getCountry(ipAddr string) (string, error) {
 	return record.Country.ISOCode, nil
 }
 
-// initializeGeoIP loads the geolocation database from the specified g.Path.
-func (g *geoIP) initializeGeoIP() error {
-
+// loadMMDB fetches the MMDB database from file or URL and loads it
+func (g *geoIP) loadMMDB() error {
 	g.logger.Info().Msg("loading the geoip db from file/url")
-	var scanner []byte
+	var data []byte
 	if strings.HasPrefix(g.Path, "http://") || strings.HasPrefix(g.Path, "https://") {
 		g.logger.Info().Msg("geoip db path is a URL, trying to fetch")
 		resp, err := http.Get(g.Path)
@@ -69,31 +73,41 @@ func (g *geoIP) initializeGeoIP() error {
 		}
 		g.logger.Info().Msgf("(re)fetching %s", g.Path)
 		defer resp.Body.Close()
-		scanner, err = io.ReadAll(resp.Body)
+		data, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
-
 	} else {
 		g.logger.Info().Msgf("(re)loading file: %s", g.Path)
 		var err error
-		if scanner, err = os.ReadFile(g.Path); err != nil {
+		if data, err = os.ReadFile(g.Path); err != nil {
 			return err
 		}
 	}
-	g.logger.Info().Msgf("geolocation database with %d bytes loaded", len(scanner))
-	var err error
-	if g.mmdb, err = maxminddb.FromBytes(scanner); err != nil {
-		//g.logger.Warn("%d bytes read, %s", len(scanner), err)
+	g.logger.Info().Msgf("geolocation database with %d bytes loaded", len(data))
+
+	newMMDB, err := maxminddb.FromBytes(data)
+	if err != nil {
 		return err
 	}
+
+	g.mu.Lock()
+	g.mmdb = newMMDB
+	g.mu.Unlock()
+
 	g.logger.Info().Msg("Loaded MMDB")
+	return nil
+}
+
+// initializeGeoIP loads the geolocation database and periodically refreshes it
+func (g *geoIP) initializeGeoIP() error {
+	if err := g.loadMMDB(); err != nil {
+		return err
+	}
 	for range time.NewTicker(g.Refresh).C {
-		if g.mmdb, err = maxminddb.FromBytes(scanner); err != nil {
-			//g.logger.Warn("%d bytes read, %s", len(scanner), err)
-			return err
+		if err := g.loadMMDB(); err != nil {
+			g.logger.Warn().Err(err).Msg("failed to reload MMDB")
 		}
-		g.logger.Info().Msgf("Loaded MMDB %v", g.mmdb)
 	}
 	return nil
 }
@@ -107,24 +121,29 @@ func (g *geoIP) initializeGeoIP() error {
 // 4. if the country is in the allowed list, it's allowed
 // note that the reject list is checked first and takes priority over the allow list
 // if the IP's country doesn't match any of the above, it's allowed if the blocked list is not empty
-// for example, if the blockedlist is [US] and the allowedlist is empty, a connection from
-// CA will be allowed. but if blockedlist is empty and allowedlist is [US], a connection from
-// CA will be rejected.
-func (g geoIP) checkGeoIPSkip(addr net.Addr) bool {
-	if g.mmdb == nil {
+func (g *geoIP) checkGeoIPSkip(addr net.Addr) bool {
+	g.mu.RLock()
+	mmdbLoaded := g.mmdb != nil
+	g.mu.RUnlock()
+
+	if !mmdbLoaded {
 		return true
 	}
 
-	ipPort := strings.Split(addr.String(), ":")
-	ip := ipPort[0]
+	// Use net.SplitHostPort for correct IPv6 handling
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		// fallback - might be IP without port
+		host = addr.String()
+	}
 
 	var country string
-	country, err := g.getCountry(ip)
+	country, err = g.getCountry(host)
 	country = strings.ToLower(country)
-	g.logger.Debug().Msgf("incoming tcp connection from ip %s and country %s", ip, country)
+	g.logger.Debug().Msgf("incoming tcp connection from ip %s and country %s", host, country)
 
 	if err != nil {
-		g.logger.Info().Msgf("failed to get the geolocation of ip %s", ip)
+		g.logger.Info().Msgf("failed to get the geolocation of ip %s", host)
 		return false
 	}
 	if slices.Contains(g.BlockedCountries, country) {
@@ -139,12 +158,12 @@ func (g geoIP) checkGeoIPSkip(addr net.Addr) bool {
 		return true
 	}
 
-	// othewise fail
+	// otherwise fail
 	return false
 }
 
-// implement the ACL interface
-func (g geoIP) Decide(c *ConnInfo) error {
+// Decide implements the ACL interface
+func (g *geoIP) Decide(c *ConnInfo) error {
 	g.logger.Debug().Any("conn", c).Msg("deciding on geoip acl")
 	// in checkGeoIPSkip, false is reject
 	if !g.checkGeoIPSkip(c.SrcIP) {
@@ -154,10 +173,10 @@ func (g geoIP) Decide(c *ConnInfo) error {
 	g.logger.Debug().Any("conn", c).Msg("decided on geoip acl")
 	return nil
 }
-func (g geoIP) Name() string {
+func (g *geoIP) Name() string {
 	return "geoip"
 }
-func (g geoIP) Priority() uint {
+func (g *geoIP) Priority() uint {
 	return g.priority
 }
 

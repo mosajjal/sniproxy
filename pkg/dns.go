@@ -207,7 +207,16 @@ func (dnsc DNSClient) lookupDomain(domain string, version string) (netip.Addr, e
 	return netip.IPv4Unspecified(), fmt.Errorf("invalid IP version preference")
 }
 
+const maxCNAMEDepth = 10
+
 func (dnsc DNSClient) lookupDomain4(domain string) (netip.Addr, error) {
+	return dnsc.lookupDomain4WithDepth(domain, 0)
+}
+
+func (dnsc DNSClient) lookupDomain4WithDepth(domain string, depth int) (netip.Addr, error) {
+	if depth > maxCNAMEDepth {
+		return netip.IPv4Unspecified(), fmt.Errorf("CNAME recursion limit exceeded for %s", domain)
+	}
 	if !strings.HasSuffix(domain, ".") {
 		domain = domain + "."
 	}
@@ -217,7 +226,7 @@ func (dnsc DNSClient) lookupDomain4(domain string) (netip.Addr, error) {
 	}
 	if len(rAddrDNS) > 0 {
 		if rAddrDNS[0].Header().Rrtype == dns.TypeCNAME {
-			return dnsc.lookupDomain4(rAddrDNS[0].(*dns.CNAME).Target)
+			return dnsc.lookupDomain4WithDepth(rAddrDNS[0].(*dns.CNAME).Target, depth+1)
 		}
 		if rAddrDNS[0].Header().Rrtype == dns.TypeA {
 			return netip.AddrFrom4([4]byte(rAddrDNS[0].(*dns.A).A.To4())), nil
@@ -229,6 +238,13 @@ func (dnsc DNSClient) lookupDomain4(domain string) (netip.Addr, error) {
 }
 
 func (dnsc DNSClient) lookupDomain6(domain string) (netip.Addr, error) {
+	return dnsc.lookupDomain6WithDepth(domain, 0)
+}
+
+func (dnsc DNSClient) lookupDomain6WithDepth(domain string, depth int) (netip.Addr, error) {
+	if depth > maxCNAMEDepth {
+		return netip.IPv6Unspecified(), fmt.Errorf("CNAME recursion limit exceeded for %s", domain)
+	}
 	if !strings.HasSuffix(domain, ".") {
 		domain = domain + "."
 	}
@@ -238,7 +254,7 @@ func (dnsc DNSClient) lookupDomain6(domain string) (netip.Addr, error) {
 	}
 	if len(rAddrDNS) > 0 {
 		if rAddrDNS[0].Header().Rrtype == dns.TypeCNAME {
-			return dnsc.lookupDomain6(rAddrDNS[0].(*dns.CNAME).Target)
+			return dnsc.lookupDomain6WithDepth(rAddrDNS[0].(*dns.CNAME).Target, depth+1)
 		}
 		if rAddrDNS[0].Header().Rrtype == dns.TypeAAAA {
 			return netip.AddrFrom16([16]byte(rAddrDNS[0].(*dns.AAAA).AAAA.To16())), nil
@@ -290,9 +306,7 @@ func RunDNS(c *Config, l zerolog.Logger) {
 			l.Info().Msgf("started udp dns on %s", c.BindDNSOverUDP)
 			err := serverUDP.ListenAndServe()
 			if err != nil {
-				l.Error().Msgf("error starting udp dns server: %s", err)
-				l.Info().Msgf("failed to start server: %s\nyou can run the following command to pinpoint which process is listening on your bind\nsudo ss -pltun", c.BindDNSOverUDP)
-				panic(2)
+				l.Fatal().Msgf("failed to start udp dns server: %s", err)
 			}
 		}()
 	}
@@ -304,8 +318,7 @@ func RunDNS(c *Config, l zerolog.Logger) {
 			l.Info().Msgf("started tcp dns on %s", c.BindDNSOverTCP)
 			err := serverTCP.ListenAndServe()
 			if err != nil {
-				l.Error().Msgf("failed to start server %s", err)
-				l.Info().Msgf("failed to start server: %s\nyou can run the following command to pinpoint which process is listening on your bind\nsudo ss -pltun", c.BindDNSOverUDP)
+				l.Fatal().Msgf("failed to start server: %s\nyou can run the following command to pinpoint which process is listening on your bind\nsudo ss -pltun", c.BindDNSOverTCP)
 			}
 		}()
 	}
@@ -315,9 +328,8 @@ func RunDNS(c *Config, l zerolog.Logger) {
 		go func() {
 			crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
 			if err != nil {
-				l.Error().Msg(err.Error())
-				panic(2)
-
+				l.Fatal().Msgf("failed to load TLS cert for DNS-over-TLS: %s", err)
+				return
 			}
 			tlsConfig := &tls.Config{}
 			tlsConfig.Certificates = []tls.Certificate{crt}
@@ -327,7 +339,7 @@ func RunDNS(c *Config, l zerolog.Logger) {
 			l.Info().Msgf("started dot dns on %s", c.BindDNSOverTLS)
 			err = serverTLS.ListenAndServe()
 			if err != nil {
-				l.Error().Msg(err.Error())
+				l.Fatal().Err(err).Msg("failed to start DNS-over-TLS server")
 			}
 		}()
 	}
@@ -336,7 +348,8 @@ func RunDNS(c *Config, l zerolog.Logger) {
 
 		crt, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
 		if err != nil {
-			l.Error().Msg(err.Error())
+			l.Fatal().Err(err).Msg("failed to load TLS cert for DNS-over-QUIC")
+			return
 		}
 
 		// Create the QUIC listener
@@ -349,7 +362,8 @@ func RunDNS(c *Config, l zerolog.Logger) {
 		}
 		doqServer, err := doqserver.New(doqConf)
 		if err != nil {
-			l.Error().Msg(err.Error())
+			l.Fatal().Err(err).Msg("failed to create DNS-over-QUIC server")
+			return
 		}
 
 		// Accept QUIC connections

@@ -97,6 +97,26 @@ func TestParseRanges(t *testing.T) {
 			input: []string{},
 			want:  nil,
 		},
+		{
+			name:    "port zero",
+			input:   []string{"0"},
+			wantErr: true,
+		},
+		{
+			name:    "port too high",
+			input:   []string{"70000"},
+			wantErr: true,
+		},
+		{
+			name:    "range too high",
+			input:   []string{"65530-65536"},
+			wantErr: true,
+		},
+		{
+			name:    "range inverted",
+			input:   []string{"8083-8080"},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

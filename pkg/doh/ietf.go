@@ -49,7 +49,7 @@ func (s *Server) parseRequestIETF(_ context.Context, w http.ResponseWriter, r *h
 			errtext: fmt.Sprintf("Invalid argument value: \"dns\" = %q", requestBase64),
 		}
 	}
-	if len(requestBinary) == 0 && (r.Header.Get("Content-Type") == "application/dns-message" || r.Header.Get("Content-Type") == "application/dns-udpwireformat") {
+	if len(requestBinary) == 0 && (r.Header.Get("Content-Type") == contentTypeDNSMessage || r.Header.Get("Content-Type") == contentTypeDNSUDPWire) {
 		requestBinary, err = io.ReadAll(r.Body)
 		if err != nil {
 			return &DNSRequest{
@@ -61,7 +61,7 @@ func (s *Server) parseRequestIETF(_ context.Context, w http.ResponseWriter, r *h
 	if len(requestBinary) == 0 {
 		return &DNSRequest{
 			errcode: 400,
-			errtext: fmt.Sprintf("Invalid argument value: \"dns\""),
+			errtext: "Invalid argument value: \"dns\"",
 		}
 	}
 
@@ -129,7 +129,7 @@ func (s *Server) parseRequestIETF(_ context.Context, w http.ResponseWriter, r *h
 	if edns0Subnet == nil {
 		ednsClientFamily := uint16(0)
 		ednsClientAddress := s.findClientIP(r)
-		ednsClientNetmask := uint8(255)
+		var ednsClientNetmask uint8
 		if ednsClientAddress != nil {
 			if ipv4 := ednsClientAddress.To4(); ipv4 != nil {
 				ednsClientFamily = 1
@@ -176,7 +176,7 @@ func (s *Server) generateResponseIETF(_ context.Context, w http.ResponseWriter, 
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/dns-message")
+	w.Header().Set("Content-Type", contentTypeDNSMessage)
 	now := time.Now().UTC().Format(http.TimeFormat)
 	w.Header().Set("Date", now)
 	w.Header().Set("Last-Modified", now)
@@ -207,11 +207,11 @@ func (s *Server) patchDNSCryptProxyReqID(w http.ResponseWriter, r *http.Request,
 		if s.conf.Verbose {
 			log.Println("DNSCrypt-Proxy detected. Patching response.")
 		}
-		w.Header().Set("Content-Type", "application/dns-message")
+		w.Header().Set("Content-Type", contentTypeDNSMessage)
 		w.Header().Set("Vary", "Accept, User-Agent")
 		now := time.Now().UTC().Format(http.TimeFormat)
 		w.Header().Set("Date", now)
-		w.Write([]byte("\xca\xfe\x81\x05\x00\x01\x00\x01\x00\x00\x00\x00\x00\x00\x02\x00\x01\x00\x00\x10\x00\x01\x00\x00\x00\x00\x00\xa8\xa7\r\nWorkaround a bug causing DNSCrypt-Proxy to expect a response with TransactionID = 0xcafe\r\nRefer to https://github.com/jedisct1/dnscrypt-proxy/issues/526 for details."))
+		_, _ = w.Write([]byte("\xca\xfe\x81\x05\x00\x01\x00\x01\x00\x00\x00\x00\x00\x00\x02\x00\x01\x00\x00\x10\x00\x01\x00\x00\x00\x00\x00\xa8\xa7\r\nWorkaround a bug causing DNSCrypt-Proxy to expect a response with TransactionID = 0xcafe\r\nRefer to https://github.com/jedisct1/dnscrypt-proxy/issues/526 for details."))
 		return true
 	}
 	return false

@@ -41,6 +41,13 @@ import (
 	"github.com/miekg/dns"
 )
 
+const (
+	contentTypeDNSJSON    = "application/dns-json"
+	contentTypeDNSMessage = "application/dns-message"
+	contentTypeJSON       = "application/json"
+	contentTypeDNSUDPWire = "application/dns-udpwireformat"
+)
+
 // Server is a DNS-over-HTTPS server runtime
 type Server struct {
 	conf         *config
@@ -85,7 +92,7 @@ func NewDefaultConfig() *config {
 
 // NewServer creates a new Server
 func NewServer(conf *config) (*Server, error) {
-	timeout := time.Duration(conf.Timeout) * time.Second
+	timeout := time.Duration(conf.Timeout) * time.Second //nolint:gosec // G115 - timeout is a small uint, no overflow risk
 	s := &Server{
 		conf: conf,
 		udpClient: &dns.Client{
@@ -158,9 +165,11 @@ func (s *Server) Start() error {
 			if s.conf.Cert != "" || s.conf.Key != "" {
 				if clientCAPool != nil {
 					srvtls := &http.Server{
-						Handler: servemux,
-						Addr:    addr,
+						Handler:           servemux,
+						Addr:              addr,
+						ReadHeaderTimeout: 5 * time.Second,
 						TLSConfig: &tls.Config{
+							MinVersion: tls.VersionTLS12,
 							ClientCAs:  clientCAPool,
 							ClientAuth: tls.RequireAndVerifyClientCert,
 							GetCertificate: func(_ *tls.ClientHelloInfo) (certificate *tls.Certificate, e error) {
@@ -175,10 +184,20 @@ func (s *Server) Start() error {
 					}
 					err = srvtls.ListenAndServeTLS("", "")
 				} else {
-					err = http.ListenAndServeTLS(addr, s.conf.Cert, s.conf.Key, servemux)
+					srv := &http.Server{
+						Addr:              addr,
+						Handler:           servemux,
+						ReadHeaderTimeout: 5 * time.Second,
+					}
+					err = srv.ListenAndServeTLS(s.conf.Cert, s.conf.Key)
 				}
 			} else {
-				err = http.ListenAndServe(addr, servemux)
+				srv := &http.Server{
+					Addr:              addr,
+					Handler:           servemux,
+					ReadHeaderTimeout: 5 * time.Second,
+				}
+				err = srv.ListenAndServe()
 			}
 			if err != nil {
 				log.Println(err)
@@ -226,12 +245,14 @@ func (s *Server) handlerFunc(w http.ResponseWriter, r *http.Request) {
 
 	if r.Form == nil {
 		const maxMemory = 32 << 20 // 32 MB
-		r.ParseMultipartForm(maxMemory)
+		if err := r.ParseMultipartForm(maxMemory); err != nil {
+			log.Printf("failed to parse form: %v", err)
+		}
 	}
 
 	for _, header := range s.conf.DebugHTTPHeaders {
 		if value := r.Header.Get(header); value != "" {
-			log.Printf("%s: %s\n", header, value)
+			log.Printf("%s: %s\n", header, strings.ReplaceAll(strings.ReplaceAll(value, "\n", ""), "\r", "")) //nolint:gosec // G706 - header name comes from server configuration, value is sanitized
 		}
 	}
 
@@ -242,44 +263,47 @@ func (s *Server) handlerFunc(w http.ResponseWriter, r *http.Request) {
 	if contentType == "" {
 		// Guess request Content-Type based on other parameters
 		if r.FormValue("name") != "" {
-			contentType = "application/dns-json"
+			contentType = contentTypeDNSJSON
 		} else if r.FormValue("dns") != "" {
-			contentType = "application/dns-message"
+			contentType = contentTypeDNSMessage
 		}
 	}
 	var responseType string
 	for _, responseCandidate := range strings.Split(r.Header.Get("Accept"), ",") {
 		responseCandidate = strings.SplitN(responseCandidate, ";", 2)[0]
-		if responseCandidate == "application/json" {
-			responseType = "application/json"
-			break
-		} else if responseCandidate == "application/dns-udpwireformat" {
-			responseType = "application/dns-message"
-			break
-		} else if responseCandidate == "application/dns-message" {
-			responseType = "application/dns-message"
+		switch responseCandidate {
+		case contentTypeJSON:
+			responseType = contentTypeJSON
+		case contentTypeDNSUDPWire:
+			responseType = contentTypeDNSMessage
+		case contentTypeDNSMessage:
+			responseType = contentTypeDNSMessage
+		}
+		if responseType != "" {
 			break
 		}
 	}
 	if responseType == "" {
 		// Guess response Content-Type based on request Content-Type
-		if contentType == "application/dns-json" {
-			responseType = "application/json"
-		} else if contentType == "application/dns-message" {
-			responseType = "application/dns-message"
-		} else if contentType == "application/dns-udpwireformat" {
-			responseType = "application/dns-message"
+		switch contentType {
+		case contentTypeDNSJSON:
+			responseType = contentTypeJSON
+		case contentTypeDNSMessage:
+			responseType = contentTypeDNSMessage
+		case contentTypeDNSUDPWire:
+			responseType = contentTypeDNSMessage
 		}
 	}
 
 	var req *DNSRequest
-	if contentType == "application/dns-json" {
+	switch contentType {
+	case contentTypeDNSJSON:
 		req = s.parseRequestGoogle(ctx, w, r)
-	} else if contentType == "application/dns-message" {
+	case contentTypeDNSMessage:
 		req = s.parseRequestIETF(ctx, w, r)
-	} else if contentType == "application/dns-udpwireformat" {
+	case contentTypeDNSUDPWire:
 		req = s.parseRequestIETF(ctx, w, r)
-	} else {
+	default:
 		jsondns.FormatError(w, fmt.Sprintf("Invalid argument value: \"ct\" = %q", contentType), 415)
 		return
 	}
@@ -299,12 +323,14 @@ func (s *Server) handlerFunc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if responseType == "application/json" {
+	switch responseType {
+	case contentTypeJSON:
 		s.generateResponseGoogle(ctx, w, r, req)
-	} else if responseType == "application/dns-message" {
+	case contentTypeDNSMessage:
 		s.generateResponseIETF(ctx, w, r, req)
-	} else {
-		panic("Unknown response Content-Type")
+	default:
+		jsondns.FormatError(w, fmt.Sprintf("Unsupported response Content-Type %q", responseType), 500)
+		return
 	}
 }
 
@@ -367,7 +393,7 @@ func (s *Server) indexQuestionType(msg *dns.Msg, qtype uint16) int {
 func (s *Server) doDNSQuery(ctx context.Context, req *DNSRequest) (err error) {
 	numServers := len(s.conf.Upstream)
 	for i := uint(0); i < s.conf.Tries; i++ {
-		req.currentUpstream = s.conf.Upstream[rand.Intn(numServers)]
+		req.currentUpstream = s.conf.Upstream[rand.Intn(numServers)] //nolint:gosec // G404 - random selection for load balancing, not security
 
 		upstream, t := addressAndType(req.currentUpstream)
 
@@ -401,7 +427,7 @@ func (s *Server) doDNSQuery(ctx context.Context, req *DNSRequest) (err error) {
 		if err == nil {
 			return nil
 		}
-		log.Printf("DNS error from upstream %s: %s\n", req.currentUpstream, err.Error())
+		log.Printf("DNS error from upstream %s: %s\n", req.currentUpstream, err.Error()) //nolint:gosec // G706 - upstream value comes from configuration, not user input
 	}
 	return err
 }

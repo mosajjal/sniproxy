@@ -17,7 +17,7 @@ func GetPublicIPv4() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	localAddr := conn.LocalAddr().String()
 	idx := strings.LastIndex(localAddr, ":")
 	ipaddr := localAddr[0:idx]
@@ -28,7 +28,7 @@ func GetPublicIPv4() (string, error) {
 	// trying to get the public IP from multiple sources to see if they match.
 	resp, err := http.Get("https://4.ident.me")
 	if err == nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		body, err := io.ReadAll(resp.Body)
 		if err == nil {
 			externalIP = string(body)
@@ -58,7 +58,7 @@ func GetPublicIPv6() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	localAddr := conn.LocalAddr().String()
 	idx := strings.LastIndex(localAddr, ":")
 	ipaddr := localAddr[0:idx]
@@ -69,7 +69,7 @@ func GetPublicIPv6() (string, error) {
 	// trying to get the public IP from multiple sources to see if they match.
 	resp, err := http.Get("https://6.ident.me")
 	if err == nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		body, err := io.ReadAll(resp.Body)
 		if err == nil {
 			externalIP = string(body)

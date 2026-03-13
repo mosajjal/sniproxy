@@ -67,12 +67,13 @@ func (g *geoIP) loadMMDB() error {
 	var data []byte
 	if strings.HasPrefix(g.Path, "http://") || strings.HasPrefix(g.Path, "https://") {
 		g.logger.Info().Msg("geoip db path is a URL, trying to fetch")
-		resp, err := http.Get(g.Path)
+		client := http.Client{Timeout: 60 * time.Second}
+		resp, err := client.Get(g.Path)
 		if err != nil {
 			return err
 		}
 		g.logger.Info().Msgf("(re)fetching %s", g.Path)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		data, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
@@ -184,11 +185,15 @@ func (g *geoIP) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	c = c.Cut(fmt.Sprintf("acl.%s", g.Name()))
 	g.logger = logger
 	g.Path = c.String("path")
-	g.priority = uint(c.Int("priority"))
+	g.priority = uint(c.Int("priority")) //nolint:gosec // G115 - priority is a small non-negative config value
 	g.AllowedCountries = toLowerSlice(c.Strings("allowed"))
 	g.BlockedCountries = toLowerSlice(c.Strings("blocked"))
 	g.Refresh = c.Duration("refresh_interval")
-	go g.initializeGeoIP()
+	go func() {
+		if err := g.initializeGeoIP(); err != nil {
+			g.logger.Error().Err(err).Msg("failed to initialize geoip")
+		}
+	}()
 	return nil
 }
 

@@ -9,20 +9,20 @@ func buildClientHello(sni string) []byte {
 	// SNI extension
 	serverName := []byte(sni)
 	// Server Name list entry: type(1) + length(2) + name
-	snEntry := []byte{0x00} // host_name type
-	snEntry = append(snEntry, byte(len(serverName)>>8), byte(len(serverName)))
+	snEntry := []byte{0x00}                                                    // host_name type
+	snEntry = append(snEntry, byte(len(serverName)>>8), byte(len(serverName))) //nolint:gosec // G115
 	snEntry = append(snEntry, serverName...)
 	// Server Name list: length(2) + entries
-	snList := []byte{byte(len(snEntry) >> 8), byte(len(snEntry))}
+	snList := []byte{byte(len(snEntry) >> 8), byte(len(snEntry))} //nolint:gosec // G115
 	snList = append(snList, snEntry...)
 
 	// SNI extension header: type(2) + length(2) + data
-	sniExt := []byte{0x00, 0x00} // Extension type: server_name
-	sniExt = append(sniExt, byte(len(snList)>>8), byte(len(snList)))
+	sniExt := []byte{0x00, 0x00}                                     // Extension type: server_name
+	sniExt = append(sniExt, byte(len(snList)>>8), byte(len(snList))) //nolint:gosec // G115
 	sniExt = append(sniExt, snList...)
 
 	// Extensions block: length(2) + extensions
-	extensions := []byte{byte(len(sniExt) >> 8), byte(len(sniExt))}
+	extensions := []byte{byte(len(sniExt) >> 8), byte(len(sniExt))} //nolint:gosec // G115
 	extensions = append(extensions, sniExt...)
 
 	// Client Hello body
@@ -41,8 +41,8 @@ func buildClientHello(sni string) []byte {
 	clientHello = append(clientHello, extensions...)
 
 	// Handshake header: type(1) + length(3)
-	handshake := []byte{0x01} // ClientHello
-	handshake = append(handshake, 0x00, byte(len(clientHello)>>8), byte(len(clientHello)))
+	handshake := []byte{0x01}                                                              // ClientHello
+	handshake = append(handshake, 0x00, byte(len(clientHello)>>8), byte(len(clientHello))) //nolint:gosec // G115
 	handshake = append(handshake, clientHello...)
 
 	// TLS record: type(1) + version(2) + length(2)
@@ -50,7 +50,7 @@ func buildClientHello(sni string) []byte {
 		0x16,       // Handshake
 		0x03, 0x01, // TLS 1.0 record layer
 	}
-	record = append(record, byte(len(handshake)>>8), byte(len(handshake)))
+	record = append(record, byte(len(handshake)>>8), byte(len(handshake))) //nolint:gosec // G115
 	record = append(record, handshake...)
 
 	return record
@@ -194,11 +194,40 @@ func TestGetSNIBlock_Empty(t *testing.T) {
 	}
 }
 
+func TestGetSNIBlock_BoundsOverflow(t *testing.T) {
+	// SNI entry with length field claiming more data than exists
+	// Format: length(2) + type(1) + sni_length(2) + sni_data
+	// Here sni_length claims 255 bytes but only 3 bytes of data exist
+	data := []byte{
+		0x00, 0x06, // length of this entry: 6
+		0x00,       // type: host_name
+		0x00, 0xFF, // SNI length: 255 (way more than available)
+		0x61, 0x62, 0x63, // only 3 bytes of actual data
+	}
+	_, err := getSNIBlock(data)
+	if err == nil {
+		t.Error("expected error for SNI length exceeding available data")
+	}
+}
+
+func TestGetSNIBlock_TooShortForLength(t *testing.T) {
+	// SNI entry where the SNI sub-block has fewer than 2 bytes for length
+	data := []byte{
+		0x00, 0x02, // length: 2
+		0x00, // type: host_name
+		0x41, // only 1 byte (need 2 for length)
+	}
+	_, err := getSNIBlock(data)
+	if err == nil {
+		t.Error("expected error for SNI block too short")
+	}
+}
+
 func BenchmarkGetHostname(b *testing.B) {
 	data := buildClientHello("example.com")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		GetHostname(data)
+		_, _ = GetHostname(data)
 	}
 }
 

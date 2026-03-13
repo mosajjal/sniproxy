@@ -39,6 +39,7 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		d.logger.Info().Msg("CIDR list is a URL, trying to fetch")
 		client := http.Client{
+			Timeout: 30 * time.Second,
 			CheckRedirect: func(r *http.Request, _ []*http.Request) error {
 				r.URL.Opaque = r.URL.Path
 				return nil
@@ -50,16 +51,16 @@ func (d *cidr) LoadCIDRCSV(path string) error {
 			return err
 		}
 		d.logger.Info().Msgf("(re)fetching URL: %s", path)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		scanner = bufio.NewScanner(resp.Body)
 
 	} else {
-		file, err := os.Open(path)
+		file, err := os.Open(path) //nolint:gosec // G304 - file path comes from configuration
 		if err != nil {
 			return err
 		}
 		d.logger.Info().Msgf("(re)loading file: %s", path)
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		scanner = bufio.NewScanner(file)
 	}
 
@@ -153,7 +154,7 @@ func (d *cidr) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	c = c.Cut(fmt.Sprintf("acl.%s", d.Name()))
 	d.logger = logger
 	d.Path = c.String("path")
-	d.priority = uint(c.Int("priority"))
+	d.priority = uint(c.Int("priority")) //nolint:gosec // G115 - priority is a small non-negative config value
 	d.RefreshInterval = c.Duration("refresh_interval")
 	go d.loadCIDRCSVWorker(d.Path, d.RefreshInterval)
 	return nil

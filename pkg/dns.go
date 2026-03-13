@@ -110,7 +110,7 @@ func (c *Config) pickSrcAddr(version string) net.IP {
 
 	// Pick a random candidate
 	if len(candidates) > 0 {
-		return candidates[rand.Intn(len(candidates))].AsSlice()
+		return candidates[rand.Intn(len(candidates))].AsSlice() //nolint:gosec // G404 - random selection for load balancing, not security
 	}
 
 	return nil
@@ -273,7 +273,9 @@ func handleDNS(c *Config, l zerolog.Logger) dns.HandlerFunc {
 
 		if r.Opcode != dns.OpcodeQuery {
 			m.SetRcode(r, dns.RcodeNotImplemented)
-			w.WriteMsg(m)
+			if err := w.WriteMsg(m); err != nil {
+				l.Error().Err(err).Msg("failed to write DNS response")
+			}
 			return
 		}
 
@@ -282,7 +284,10 @@ func handleDNS(c *Config, l zerolog.Logger) dns.HandlerFunc {
 				SrcIP:  w.RemoteAddr(),
 				Domain: q.Name,
 			}
-			acl.MakeDecision(&connInfo, c.ACL)
+			if err := acl.MakeDecision(&connInfo, c.ACL); err != nil {
+				l.Error().Err(err).Msg("ACL decision failed")
+				continue
+			}
 			answers, err := processQuestion(c, l, q, connInfo.Decision)
 			if err != nil {
 				continue
@@ -290,7 +295,9 @@ func handleDNS(c *Config, l zerolog.Logger) dns.HandlerFunc {
 			m.Answer = append(m.Answer, answers...)
 		}
 
-		w.WriteMsg(m)
+		if err := w.WriteMsg(m); err != nil {
+			l.Error().Err(err).Msg("failed to write DNS response")
+		}
 	}
 }
 
@@ -302,7 +309,7 @@ func RunDNS(c *Config, l zerolog.Logger) {
 	if c.BindDNSOverUDP != "" {
 		go func() {
 			serverUDP := &dns.Server{Addr: c.BindDNSOverUDP, Net: "udp"}
-			defer serverUDP.Shutdown()
+			defer func() { _ = serverUDP.Shutdown() }()
 			l.Info().Msgf("started udp dns on %s", c.BindDNSOverUDP)
 			err := serverUDP.ListenAndServe()
 			if err != nil {
@@ -314,7 +321,7 @@ func RunDNS(c *Config, l zerolog.Logger) {
 	if c.BindDNSOverTCP != "" {
 		go func() {
 			serverTCP := &dns.Server{Addr: c.BindDNSOverTCP, Net: "tcp"}
-			defer serverTCP.Shutdown()
+			defer func() { _ = serverTCP.Shutdown() }()
 			l.Info().Msgf("started tcp dns on %s", c.BindDNSOverTCP)
 			err := serverTCP.ListenAndServe()
 			if err != nil {
@@ -331,11 +338,11 @@ func RunDNS(c *Config, l zerolog.Logger) {
 				l.Fatal().Msgf("failed to load TLS cert for DNS-over-TLS: %s", err)
 				return
 			}
-			tlsConfig := &tls.Config{}
+			tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
 			tlsConfig.Certificates = []tls.Certificate{crt}
 
 			serverTLS := &dns.Server{Addr: c.BindDNSOverTLS, Net: "tcp-tls", TLSConfig: tlsConfig}
-			defer serverTLS.Shutdown()
+			defer func() { _ = serverTLS.Shutdown() }()
 			l.Info().Msgf("started dot dns on %s", c.BindDNSOverTLS)
 			err = serverTLS.ListenAndServe()
 			if err != nil {
@@ -515,7 +522,8 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 		return &DNSClient{id, C}, nil
 	case "https":
 		tlsConfig := &tls.Config{
-			InsecureSkipVerify: skipVerify,
+			InsecureSkipVerify: skipVerify, //nolint:gosec // G402 - InsecureSkipVerify is configurable by the user
+			MinVersion:         tls.VersionTLS12,
 			ServerName:         strings.Split(parsedURL.Host, ":")[0],
 		}
 
@@ -536,7 +544,8 @@ func NewDNSClient(C *Config, uri string, skipVerify bool, proxy string) (*DNSCli
 
 	case "quic":
 		tlsConfig := &tls.Config{
-			InsecureSkipVerify: skipVerify,
+			InsecureSkipVerify: skipVerify, //nolint:gosec // G402 - InsecureSkipVerify is configurable by the user
+			MinVersion:         tls.VersionTLS12,
 			ServerName:         strings.Split(parsedURL.Host, ":")[0],
 		}
 

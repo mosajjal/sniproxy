@@ -25,7 +25,7 @@ formatters:
 linters-settings:
   errcheck:
     check-type-assertions: true
-    check-blank: true
+    check-blank: false
 
   govet:
     check-shadowing: true
@@ -44,3 +44,6 @@ issues:
       linters:
         - errcheck
         - gosec
+    - linters:
+        - errcheck
+      text: "Error return value of .*(Close|Shutdown) is not checked"

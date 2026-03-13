@@ -18,7 +18,6 @@ import (
 type override struct {
 	priority     uint
 	rules        map[string]string
-	doh          *dohserver.Server
 	dohPort      int
 	tcpproxy     *tcpproxy.Proxy
 	tcpproxyport int
@@ -47,7 +46,7 @@ func getFreePortWithRetry(retries int) (int, error) {
 	if err != nil {
 		return getFreePortWithRetry(retries - 1)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
@@ -67,7 +66,9 @@ func (o *override) startProxy() {
 		o.tcpproxy.AddSNIRoute(fmt.Sprintf("127.0.0.1:%d", o.tcpproxyport), k, tcpproxy.To(v))
 	}
 	o.logger.Info().Msgf("starting tcpproxy on port %d", o.tcpproxyport)
-	o.tcpproxy.Run()
+	if err := o.tcpproxy.Run(); err != nil {
+		o.logger.Error().Err(err).Msg("tcpproxy failed")
+	}
 }
 
 func (o override) Decide(c *ConnInfo) error {
@@ -97,7 +98,7 @@ func (o *override) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error 
 	c = c.Cut(fmt.Sprintf("acl.%s", o.Name()))
 	tmpRules := c.StringMap("rules")
 	o.logger = logger
-	o.priority = uint(c.Int("priority"))
+	o.priority = uint(c.Int("priority")) //nolint:gosec // G115 - priority is a small non-negative config value
 	o.tlsCert = c.String("tls_cert")
 	o.tlsKey = c.String("tls_key")
 	if c.String("doh_sni") != "" {
@@ -125,7 +126,11 @@ func (o *override) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error 
 		if err != nil {
 			return err
 		}
-		go dohS.Start()
+		go func() {
+			if err := dohS.Start(); err != nil {
+				o.logger.Error().Err(err).Msg("DoH server failed")
+			}
+		}()
 		// append a rule to the rules map to redirect the DoH SNI to DoH
 		tmpRules[dohSNI] = fmt.Sprintf("127.0.0.1:%d", o.dohPort)
 	}

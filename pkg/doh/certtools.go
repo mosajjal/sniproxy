@@ -94,9 +94,9 @@ func GenerateSelfSignedCertKeyWithFixtures(host string, alternateIPs []net.IP, a
 	certFixturePath := filepath.Join(fixtureDirectory, host+".crt")
 	keyFixturePath := filepath.Join(fixtureDirectory, host+".key")
 	if len(fixtureDirectory) > 0 {
-		cert, err := os.ReadFile(certFixturePath)
+		cert, err := os.ReadFile(certFixturePath) //nolint:gosec // G304 - file path is derived from configuration, not user input
 		if err == nil {
-			key, err := os.ReadFile(keyFixturePath)
+			key, err := os.ReadFile(keyFixturePath) //nolint:gosec // G304 - file path is derived from configuration, not user input
 			if err == nil {
 				return cert, key, nil
 			}
@@ -181,10 +181,10 @@ func GenerateSelfSignedCertKeyWithFixtures(host string, alternateIPs []net.IP, a
 	}
 
 	if len(fixtureDirectory) > 0 {
-		if err := os.WriteFile(certFixturePath, certBuffer.Bytes(), 0644); err != nil {
+		if err := os.WriteFile(certFixturePath, certBuffer.Bytes(), 0600); err != nil {
 			return nil, nil, fmt.Errorf("failed to write cert fixture to %s: %v", certFixturePath, err)
 		}
-		if err := os.WriteFile(keyFixturePath, keyBuffer.Bytes(), 0644); err != nil {
+		if err := os.WriteFile(keyFixturePath, keyBuffer.Bytes(), 0600); err != nil {
 			return nil, nil, fmt.Errorf("failed to write key fixture to %s: %v", certFixturePath, err)
 		}
 	}

@@ -52,7 +52,7 @@ In this tutorial, we will go over the steps to set up an SNI proxy using Vultr a
 
 # Prerequisites
 
-- A Vultr account. If you don't have one, you can sign up for free using my [Vultr referal link]
+- A Vultr account. If you don't have one, you can sign up for free using my [Vultr referral link]
 
 ## Step 1: Create a Vultr Server
 
@@ -98,7 +98,7 @@ and edit parameters as you see fit. for example, you can add more domains to the
 [byosh]: https://github.com/mosajjal/byosh
 [SimpleSNIProxy]: https://github.com/ziozzang/SimpleSNIProxy
 [these instructions]: https://gist.github.com/zoilomora/f7d264cefbb589f3f1b1fc2cea2c844c
-[Vultr referal link]: https://www.vultr.com/?ref=8578601
+[Vultr referral link]: https://www.vultr.com/?ref=8578601
 [Sample config file]: ./config.sample.yaml
 */
 package sniproxy

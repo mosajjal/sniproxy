@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/mosajjal/sniproxy/v2/pkg/acl"
 	"github.com/rs/zerolog"
@@ -44,6 +45,10 @@ func RunHTTP(c *Config, bind string, l zerolog.Logger) {
 
 	// Create transport once and reuse across requests for connection pooling
 	transport := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		MaxConnsPerHost:     0, // unlimited per-host concurrent connections
+		IdleConnTimeout:     90 * time.Second,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return c.Dialer.Dial(network, addr)
 		},
@@ -56,6 +61,7 @@ func RunHTTP(c *Config, bind string, l zerolog.Logger) {
 		Handler:        handler,
 		ReadTimeout:    HTTPReadTimeout,
 		WriteTimeout:   HTTPWriteTimeout,
+		IdleTimeout:    60 * time.Second,
 		MaxHeaderBytes: 1 << 20,
 	}
 
@@ -71,15 +77,23 @@ func handle80(c *Config, l zerolog.Logger, transport *http.Transport) http.Handl
 
 		// Get the TCP address from RemoteAddr
 		remoteAddr := r.RemoteAddr
+		host, _, err := net.SplitHostPort(remoteAddr)
+		if err != nil {
+			host = remoteAddr
+		}
 
 		connInfo := acl.ConnInfo{
-			SrcIP:  &net.TCPAddr{IP: net.ParseIP(remoteAddr[:strings.LastIndex(remoteAddr, ":")])},
+			SrcIP:  &net.TCPAddr{IP: net.ParseIP(host)},
 			Domain: r.Host,
 		}
-		acl.MakeDecision(&connInfo, c.ACL)
+		if err := acl.MakeDecision(&connInfo, c.ACL); err != nil {
+			l.Error().Err(err).Msg("ACL decision failed")
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
 		if connInfo.Decision == acl.Reject || connInfo.Decision == acl.OriginIP {
 			l.Info().Str("src_ip", remoteAddr).Msgf("rejected request")
-			http.Error(w, "Could not reach origin server", 403)
+			http.Error(w, "Could not reach origin server", http.StatusForbidden)
 			return
 		}
 		// if the URL starts with the public IP, it needs to be skipped to avoid loops
@@ -118,7 +132,7 @@ func handle80(c *Config, l zerolog.Logger, transport *http.Transport) http.Handl
 			http.Error(w, "Bad Gateway", http.StatusBadGateway)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		l.Info().Msgf("http response with status_code %s", resp.Status)
 
@@ -133,6 +147,8 @@ func handle80(c *Config, l zerolog.Logger, transport *http.Transport) http.Handl
 		w.WriteHeader(resp.StatusCode)
 
 		// Transfer response from origin server -> client
-		io.Copy(w, resp.Body)
+		if _, err := io.Copy(w, resp.Body); err != nil {
+			l.Debug().Err(err).Msg("error copying response body")
+		}
 	}
 }

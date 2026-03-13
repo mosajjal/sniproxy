@@ -37,7 +37,7 @@ func TestHandle80_HeaderFiltering(t *testing.T) {
 		w.Header().Set("X-Custom-Response", "should-be-filtered")
 		w.Header().Set("Server", "test-origin")
 		w.WriteHeader(200)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	defer origin.Close()
 
@@ -82,7 +82,7 @@ func TestHandle80_HeaderFiltering(t *testing.T) {
 
 	// Verify response
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
 	}
@@ -108,7 +108,7 @@ func TestHandle80_LoopPrevention(t *testing.T) {
 	handler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 404 {
 		t.Errorf("expected 404 for self-request, got %d", resp.StatusCode)
 	}

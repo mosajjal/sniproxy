@@ -146,7 +146,7 @@ func TestMakeDecision(t *testing.T) {
 	// Run the test cases
 	for _, tc := range cases {
 		t.Run(tc.config, func(t *testing.T) {
-			MakeDecision(tc.connInfo, getAcls(&logger, tc.config))
+			_ = MakeDecision(tc.connInfo, getAcls(&logger, tc.config))
 			if tc.expected != tc.connInfo.Decision {
 				t.Errorf("MakeDecision (domain=%v,ip=%v,config=%v) decided %v, expected %v", tc.connInfo.Domain, tc.connInfo.SrcIP, tc.config, tc.connInfo.Decision, tc.expected)
 			}

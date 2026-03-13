@@ -61,21 +61,26 @@ func isSelf(c *Config, ip netip.Addr) bool {
 // handleTLS handles the incoming TLS connection
 func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 	c.ReceivedHTTPS.Inc(1)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	bufPtr := tlsBufferPool.Get().(*[]byte)
 	incoming := *bufPtr
 	defer tlsBufferPool.Put(bufPtr)
 
 	// Set a read deadline to prevent slowloris-style attacks
-	conn.SetReadDeadline(time.Now().Add(tlsReadTimeout))
+	if err := conn.SetReadDeadline(time.Now().Add(tlsReadTimeout)); err != nil {
+		l.Error().Err(err).Msg("failed to set read deadline")
+		return err
+	}
 	n, err := conn.Read(incoming)
 	if err != nil {
 		l.Error().Err(err).Msg("failed to read from connection")
 		return err
 	}
 	// Clear the read deadline for proxied data
-	conn.SetReadDeadline(time.Time{})
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		l.Debug().Err(err).Msg("failed to clear read deadline")
+	}
 
 	sni, err := GetHostname(incoming[:n])
 	if err != nil {
@@ -90,7 +95,10 @@ func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 		SrcIP:  conn.RemoteAddr(),
 		Domain: sni,
 	}
-	acl.MakeDecision(&connInfo, c.ACL)
+	if err := acl.MakeDecision(&connInfo, c.ACL); err != nil {
+		l.Error().Err(err).Msg("ACL decision failed")
+		return err
+	}
 
 	if connInfo.Decision == acl.Reject {
 		l.Warn().Msgf("ACL rejection srcip=%s", conn.RemoteAddr().String())
@@ -145,7 +153,7 @@ func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 			return err
 		}
 	}
-	defer target.Close()
+	defer func() { _ = target.Close() }()
 
 	c.ProxiedHTTPS.Inc(1)
 	if _, err := target.Write(incoming[:n]); err != nil {
@@ -185,13 +193,21 @@ func RunHTTPS(c *Config, bind string, l zerolog.Logger) {
 		l.Fatal().Msg(err.Error())
 	} else {
 		l.Info().Msgf("listening https on %s", bind)
-		defer listener.Close()
+		defer func() { _ = listener.Close() }()
+		var acceptErrors int
 		for {
-			if con, err := listener.Accept(); err != nil {
+			con, err := listener.Accept()
+			if err != nil {
+				acceptErrors++
 				l.Error().Msg(err.Error())
-			} else {
-				go handleTLS(c, con, l)
+				// Backoff on repeated accept errors to avoid tight loop
+				if acceptErrors > 5 {
+					time.Sleep(100 * time.Millisecond)
+				}
+				continue
 			}
+			acceptErrors = 0
+			go func(conn net.Conn) { _ = handleTLS(c, conn, l) }(con)
 		}
 	}
 }

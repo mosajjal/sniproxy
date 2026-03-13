@@ -31,6 +31,8 @@ const (
 	IPVersionIPv6Only
 )
 
+const ipVersionAnyStr = "any"
+
 // ParseIPVersion converts a string to IPVersion type
 func ParseIPVersion(s string) IPVersion {
 	s = strings.ToLower(strings.TrimSpace(s))
@@ -43,7 +45,7 @@ func ParseIPVersion(s string) IPVersion {
 		return IPVersionIPv4Preferred
 	case "ipv6", "6":
 		return IPVersionIPv6Preferred
-	case "any", "0", "":
+	case ipVersionAnyStr, "0", "":
 		return IPVersionAny
 	default:
 		return IPVersionAny
@@ -62,9 +64,9 @@ func (v IPVersion) String() string {
 	case IPVersionIPv6Preferred:
 		return "ipv6"
 	case IPVersionAny:
-		return "any"
+		return ipVersionAnyStr
 	default:
-		return "any"
+		return ipVersionAnyStr
 	}
 }
 
@@ -199,7 +201,7 @@ func (c *Config) SetDNSClient(logger zerolog.Logger) error {
 		dnsProxy = c.UpstreamSOCKS5
 	}
 	var err error
-	dnsClient, err = NewDNSClient(c, c.UpstreamDNS, true, dnsProxy)
+	dnsClient, err = NewDNSClient(c, c.UpstreamDNS, false, dnsProxy)
 	if err != nil {
 		logger.Error().Msgf("error setting up dns client with socks5 proxy, falling back to direct DNS client: %v", err)
 		dnsClient, err = NewDNSClient(c, c.UpstreamDNS, false, "")
@@ -222,6 +224,9 @@ func parseRanges(portRanges ...string) ([]int, error) {
 			if err != nil {
 				return nil, fmt.Errorf("error parsing port: %w", err)
 			}
+			if port < 1 || port > 65535 {
+				return nil, fmt.Errorf("port %d out of valid range (1-65535)", port)
+			}
 			ports = append(ports, port)
 		} else {
 			num1Str := strings.Split(portRange, "-")[0]
@@ -235,6 +240,9 @@ func parseRanges(portRanges ...string) ([]int, error) {
 			num2, err := strconv.Atoi(num2Str)
 			if err != nil {
 				return nil, fmt.Errorf("error parsing port range end %q: %w", num2Str, err)
+			}
+			if num1 < 1 || num2 > 65535 || num1 > num2 {
+				return nil, fmt.Errorf("invalid port range %d-%d (must be 1-65535, start <= end)", num1, num2)
 			}
 			for i := num1; i <= num2; i++ {
 				ports = append(ports, i)

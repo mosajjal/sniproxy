@@ -101,7 +101,7 @@ func main() {
 		return
 	}
 	if flags.Changed("defaultconfig") {
-		fmt.Fprint(os.Stdout, string(defaultConfig))
+		_, _ = fmt.Fprint(os.Stdout, string(defaultConfig))
 		return
 	}
 	ret := enableProfile(*prof)
@@ -233,7 +233,12 @@ func main() {
 			logger.Info().Str(
 				"address", c.BindPrometheus,
 			).Msg("starting metrics server")
-			if err := http.ListenAndServe(c.BindPrometheus, promhttp.Handler()); err != nil {
+			promServer := &http.Server{
+				Addr:              c.BindPrometheus,
+				Handler:           promhttp.Handler(),
+				ReadHeaderTimeout: 5 * time.Second,
+			}
+			if err := promServer.ListenAndServe(); err != nil {
 				logger.Error().Msgf("%s", err)
 			}
 		}()

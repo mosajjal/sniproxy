@@ -28,3 +28,6 @@ jobs:
 
     - name: Test
       run: go test -v -race ./...
+
+    - name: Goroutine leak detection
+      run: GOEXPERIMENT=goroutineleakprofile go test -v -run "Goroutine" ./...

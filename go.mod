@@ -1,6 +1,6 @@
 module github.com/mosajjal/sniproxy/v2
 
-go 1.24.5
+go 1.26.0
 
 require (
 	github.com/deathowl/go-metrics-prometheus v0.0.0-20221009205350-f2a1482ba35b

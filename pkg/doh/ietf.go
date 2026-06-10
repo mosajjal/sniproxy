@@ -171,7 +171,7 @@ func (s *Server) generateResponseIETF(_ context.Context, w http.ResponseWriter, 
 	req.response.Id = req.transactionID
 	respBytes, err := req.response.Pack()
 	if err != nil {
-		log.Printf("DNS packet construct failure with upstream %s: %v\n", req.currentUpstream, err)
+		log.Printf("DNS packet construct failure with upstream %s: %v\n", req.currentUpstream, err) //nolint:gosec // G706 - upstream comes from server configuration
 		jsondns.FormatError(w, fmt.Sprintf("DNS packet construct failure (%s)", err.Error()), 500)
 		return
 	}
@@ -192,10 +192,10 @@ func (s *Server) generateResponseIETF(_ context.Context, w http.ResponseWriter, 
 	}
 
 	if respJSON.Status == dns.RcodeServerFailure {
-		log.Printf("received server failure from upstream %s: %v\n", req.currentUpstream, req.response)
+		log.Printf("received server failure from upstream %s: %v\n", req.currentUpstream, req.response) //nolint:gosec // G706 - upstream comes from server configuration
 		w.WriteHeader(503)
 	}
-	_, err = w.Write(respBytes)
+	_, err = w.Write(respBytes) //nolint:gosec // G705 - respBytes is a packed binary DNS message served as application/dns-message, not HTML
 	if err != nil {
 		log.Printf("failed to write to client: %v\n", err)
 	}

@@ -34,6 +34,7 @@ type geoIP struct {
 	logger           *zerolog.Logger
 	priority         uint
 	stopCh           chan struct{}
+	doneCh           chan struct{}
 }
 
 func toLowerSlice(in []string) (out []string) {
@@ -197,7 +198,9 @@ func (g *geoIP) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	g.BlockedCountries = toLowerSlice(c.Strings("blocked"))
 	g.Refresh = c.Duration("refresh_interval")
 	g.stopCh = make(chan struct{})
+	g.doneCh = make(chan struct{})
 	go func() {
+		defer close(g.doneCh)
 		if err := g.initializeGeoIP(); err != nil {
 			g.logger.Error().Err(err).Msg("failed to initialize geoip")
 		}
@@ -205,8 +208,11 @@ func (g *geoIP) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	return nil
 }
 
+// Stop terminates the refresh worker and waits for it to exit, so the ACL can
+// be safely reconfigured afterwards
 func (g *geoIP) Stop() {
 	close(g.stopCh)
+	<-g.doneCh
 }
 
 // make the geoIP available at import time

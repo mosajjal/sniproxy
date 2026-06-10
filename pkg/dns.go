@@ -128,7 +128,7 @@ func (dnsc *DNSClient) PerformExternalAQuery(fqdn string, QType uint16) ([]dns.R
 	msg.SetEdns0(DNSUDPSize, true)
 
 	if dnsc == nil {
-		return nil, fmt.Errorf("dns client is not initialised")
+		return nil, fmt.Errorf("dns client is not initialized")
 	}
 	res, err := dnsc.Resolve(&msg, rdns.ClientInfo{})
 	if res == nil {

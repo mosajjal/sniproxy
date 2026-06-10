@@ -45,7 +45,8 @@ download_file() {
     local max_attempts=3
 
     while [ $attempts -lt $max_attempts ]; do
-        curl -L -o "$output" "$url"
+        # --fail makes curl error out on HTTP 404/5xx instead of saving the error page
+        curl --fail -L -o "$output" "$url"
         if [ $? -eq 0 ]; then
             success "Downloaded $url to $output"
             return 0
@@ -113,19 +114,22 @@ yqPath="/opt/sniproxy/yq"
 # download sniproxy
 log "Fetching latest release information..."
 latest_tag=$(get_latest_release "mosajjal/sniproxy")
+if [ -z "$latest_tag" ]; then
+    fail "Could not determine the latest release tag from the GitHub API"
+fi
 success "Latest release tag: $latest_tag"
 download_url="https://github.com/mosajjal/sniproxy/releases/download/$latest_tag/sniproxy-$latest_tag-$platform.tar.gz"
 log "Downloading sniproxy binary..."
 log "URL: $download_url"
 temp_file="/tmp/sniproxy.tar.gz"
 download_file "$download_url" "$temp_file"
-tar -xzf "$temp_file" -C /opt/sniproxy/
-mv /opt/sniproxy/sniproxy-$latest_tag-$platform/sniproxy $execCommand
+tar -xzf "$temp_file" -C /opt/sniproxy/ || fail "Failed to extract $temp_file"
+mv /opt/sniproxy/sniproxy-$latest_tag-$platform/sniproxy $execCommand || fail "sniproxy binary not found in the release archive"
 rm -rf /opt/sniproxy/sniproxy-$latest_tag-$platform
 rm "$temp_file"
 
 # make it executable
-chmod +x $execCommand
+chmod +x $execCommand || fail "Failed to make $execCommand executable"
 
 # download yq
 log "Downloading yq..."

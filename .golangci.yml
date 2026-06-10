@@ -16,34 +16,35 @@ linters:
     - unconvert     # Remove unnecessary type conversions
     - unparam       # Find unused function parameters
     - gosec         # Security-focused checks
+  settings:
+    errcheck:
+      # type assertions are not checked yet; flip this on once the existing
+      # unchecked assertions (mostly around DNS RR handling) are cleaned up
+      check-type-assertions: false
+      check-blank: false
+    goconst:
+      # don't demand constants for switch-case labels and the like that only
+      # repeat a handful of times; test literals are fine as-is
+      min-occurrences: 5
+      find-duplicates: false
+    misspell:
+      locale: US
+  exclusions:
+    rules:
+      # Exclude some linters from running on tests files
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+      - linters:
+          - errcheck
+        text: "Error return value of .*(Close|Shutdown) is not checked"
 
 formatters:
   enable:
     - gofmt
     - goimports
 
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: false
-
-  govet:
-    check-shadowing: true
-
-  misspell:
-    locale: US
-
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
-
-  exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go
-      linters:
-        - errcheck
-        - gosec
-    - linters:
-        - errcheck
-      text: "Error return value of .*(Close|Shutdown) is not checked"

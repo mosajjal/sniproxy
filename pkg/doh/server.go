@@ -245,7 +245,9 @@ func (s *Server) handlerFunc(w http.ResponseWriter, r *http.Request) {
 
 	if r.Form == nil {
 		const maxMemory = 32 << 20 // 32 MB
-		if err := r.ParseMultipartForm(maxMemory); err != nil {
+		// bound the request body so form parsing can't be used for memory/disk exhaustion
+		r.Body = http.MaxBytesReader(w, r.Body, maxMemory)
+		if err := r.ParseMultipartForm(maxMemory); err != nil { //nolint:gosec // G120 - body is capped by MaxBytesReader above
 			log.Printf("failed to parse form: %v", err)
 		}
 	}
@@ -399,7 +401,7 @@ func (s *Server) doDNSQuery(ctx context.Context, req *DNSRequest) (err error) {
 
 		switch t {
 		default:
-			log.Printf("invalid DNS type %q in upstream %q", t, upstream)
+			log.Printf("invalid DNS type %q in upstream %q", t, upstream) //nolint:gosec // G706 - upstream comes from server configuration, %q escapes control characters
 			return &configError{"invalid DNS type"}
 		// Use DNS-over-TLS (DoT) if configured to do so
 		case "tcp-tls":

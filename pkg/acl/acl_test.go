@@ -141,6 +141,14 @@ func TestMakeDecision(t *testing.T) {
 			config:   configs["acl_cidr_domain.yaml"],
 			expected: Reject,
 		},
+		{
+			// IPv6 source: cidr.csv only has IPv4 entries, so even 0.0.0.0/0,reject
+			// does not match an IPv6 client and the connection passes through.
+			// a v6 catch-all needs ::/0,reject
+			connInfo: mockConnInfo("[2001:db8::1]", "google.de"),
+			config:   configs["acl_cidr.yaml"],
+			expected: "", // zero value: no ACL matched, handlers treat this as accept
+		},
 	}
 
 	// Run the test cases

@@ -8,6 +8,8 @@ jobs:
     name: Release Go Binary
     runs-on: ubuntu-latest
     strategy:
+      # one unsupported target must not cancel the rest of the release
+      fail-fast: false
       matrix:
         # build and publish in parallel: linux/386, linux/amd64, windows/386, windows/amd64, darwin/386, darwin/amd64
         goos: [linux, windows, darwin, freebsd, openbsd]
@@ -17,6 +19,9 @@ jobs:
             goos: darwin
           - goarch: "arm"
             goos: darwin
+          # windows/arm port was removed in Go 1.26
+          - goarch: "arm"
+            goos: windows
     steps:
       - uses: actions/checkout@v6
       - uses: wangyoucao577/go-release-action@master

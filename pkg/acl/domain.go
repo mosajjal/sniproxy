@@ -27,6 +27,7 @@ type domain struct {
 	logger          *zerolog.Logger
 	priority        uint
 	stopCh          chan struct{}
+	doneCh          chan struct{}
 }
 
 const (
@@ -147,6 +148,7 @@ func (d *domain) LoadDomainsCsv(Filename string) error {
 }
 
 func (d *domain) LoadDomainsCSVWorker(path string, interval time.Duration) {
+	defer close(d.doneCh)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	// Initial load
@@ -201,12 +203,16 @@ func (d *domain) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	d.priority = uint(c.Int("priority")) //nolint:gosec // G115 - priority is a small non-negative config value
 	d.RefreshInterval = c.Duration("refresh_interval")
 	d.stopCh = make(chan struct{})
+	d.doneCh = make(chan struct{})
 	go d.LoadDomainsCSVWorker(d.Path, d.RefreshInterval)
 	return nil
 }
 
+// Stop terminates the refresh worker and waits for it to exit, so the ACL can
+// be safely reconfigured afterwards
 func (d *domain) Stop() {
 	close(d.stopCh)
+	<-d.doneCh
 }
 
 // make domain available to the ACL system at import time

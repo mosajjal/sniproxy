@@ -25,7 +25,7 @@ DNS server supporting UDP, TCP, DNS-over-TLS, DNS-over-QUIC, and DNS-over-HTTPS.
 Grab a binary from the [releases page](https://github.com/mosajjal/sniproxy/releases), or:
 
 ```bash
-go install github.com/mosajjal/sniproxy/v2@latest
+go install github.com/mosajjal/sniproxy/v2/cmd/sniproxy@latest
 ```
 
 Docker:
@@ -36,6 +36,8 @@ docker run -d --pull always \
   -v "$(pwd)/config.yaml:/tmp/config.yaml" \
   ghcr.io/mosajjal/sniproxy:latest --config /tmp/config.yaml
 ```
+
+If you use source-IP based ACLs (`cidr`, `geoip`), prefer `--network host` over `-p` port mappings: docker's bridge NAT can rewrite the client source IP to the docker gateway, which breaks IP filtering. Also remember IPv4 CIDRs don't match IPv6 clients — a full catch-all needs both `0.0.0.0/0` and `::/0`.
 
 There's also an installer script that sets up systemd and everything:
 

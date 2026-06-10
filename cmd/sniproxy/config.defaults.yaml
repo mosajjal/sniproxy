@@ -85,6 +85,14 @@ acl:
     # Interval to re-fetch the domain list
     refresh_interval: 1h0m0s
   # IP/CIDR filtering
+  # the list applies to ALL services (dns, https, http) based on the source IP of the connection.
+  # two gotchas:
+  # 1. CIDRs are matched per address family. 0.0.0.0/0,reject does NOT reject IPv6 clients;
+  #    add ::/0,reject as well if you want a dual-stack catch-all.
+  # 2. when running in docker with the default bridge network, TCP connections can appear to
+  #    come from the docker gateway (e.g. 172.17.0.1) instead of the real client IP, which
+  #    makes source-based filtering useless. run the container with --network host (or an
+  #    equivalent setup that preserves source IPs) when using this ACL.
   cidr:
     enabled: false
     # priority of the cidr filter. lower priority means it's checked first. if multiple filters have the same priority, they're checked in random order

@@ -124,8 +124,12 @@ log "URL: $download_url"
 temp_file="/tmp/sniproxy.tar.gz"
 download_file "$download_url" "$temp_file"
 tar -xzf "$temp_file" -C /opt/sniproxy/ || fail "Failed to extract $temp_file"
-mv /opt/sniproxy/sniproxy-$latest_tag-$platform/sniproxy $execCommand || fail "sniproxy binary not found in the release archive"
-rm -rf /opt/sniproxy/sniproxy-$latest_tag-$platform
+# current release archives have the binary at the root; older ones nested it in a directory
+if [ -f "/opt/sniproxy/sniproxy-$latest_tag-$platform/sniproxy" ]; then
+    mv "/opt/sniproxy/sniproxy-$latest_tag-$platform/sniproxy" $execCommand
+    rm -rf "/opt/sniproxy/sniproxy-$latest_tag-$platform"
+fi
+[ -f "$execCommand" ] || fail "sniproxy binary not found in the release archive"
 rm "$temp_file"
 
 # make it executable

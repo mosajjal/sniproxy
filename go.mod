@@ -20,7 +20,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/txthinking/socks5 v0.0.0-20251011041537-5c31f201a10e
 	github.com/yl2chen/cidranger v1.0.2
-	golang.org/x/net v0.52.0
+	golang.org/x/net v0.55.0
 	inet.af/tcpproxy v0.0.0-20231102063150-2862066fc2a9
 )
 
@@ -64,12 +64,12 @@ require (
 	github.com/yuin/gopher-lua v1.1.2-0.20241109074121-ccacf662c9d2 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
-	golang.org/x/crypto v0.49.0 // indirect
-	golang.org/x/mod v0.34.0 // indirect
+	golang.org/x/crypto v0.51.0 // indirect
+	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
-	golang.org/x/tools v0.43.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/tools v0.44.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

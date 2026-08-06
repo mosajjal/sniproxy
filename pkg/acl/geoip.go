@@ -197,6 +197,9 @@ func (g *geoIP) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	g.AllowedCountries = toLowerSlice(c.Strings("allowed"))
 	g.BlockedCountries = toLowerSlice(c.Strings("blocked"))
 	g.Refresh = c.Duration("refresh_interval")
+	if g.Refresh <= 0 {
+		return fmt.Errorf("acl.geoip.refresh_interval must be a positive duration, got %v", g.Refresh)
+	}
 	g.stopCh = make(chan struct{})
 	g.doneCh = make(chan struct{})
 	go func() {

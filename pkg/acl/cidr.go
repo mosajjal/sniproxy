@@ -167,6 +167,9 @@ func (d *cidr) ConfigAndStart(logger *zerolog.Logger, c *koanf.Koanf) error {
 	d.Path = c.String("path")
 	d.priority = uint(c.Int("priority")) //nolint:gosec // G115 - priority is a small non-negative config value
 	d.RefreshInterval = c.Duration("refresh_interval")
+	if d.RefreshInterval <= 0 {
+		return fmt.Errorf("acl.cidr.refresh_interval must be a positive duration, got %v", d.RefreshInterval)
+	}
 	d.stopCh = make(chan struct{})
 	d.doneCh = make(chan struct{})
 	go d.loadCIDRCSVWorker(d.Path, d.RefreshInterval)

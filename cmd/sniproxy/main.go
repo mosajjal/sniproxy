@@ -56,12 +56,15 @@ var logger = zerolog.New(os.Stderr).With().Timestamp().Logger().Output(zerolog.C
 // goroutineLeakProfiler writes a goroutineleak profile when sniproxy exits.
 // github.com/pkg/profile has no goroutineleak mode, so this reimplements the
 // same Stop() shape directly on top of runtime/pprof.
-type goroutineLeakProfiler struct {
-	path string
-}
+type goroutineLeakProfiler struct{}
 
 func (g *goroutineLeakProfiler) Stop() {
-	f, err := os.Create(g.path)
+	// os.CreateTemp, not a fixed name in the shared temp directory. sniproxy
+	// normally runs as root to bind 80/443/53, and a predictable path is a
+	// target: os.Create follows symlinks, so a local user could plant one and
+	// have the daemon truncate a file of their choosing. This gives an
+	// unguessable name, O_EXCL, and mode 0600.
+	f, err := os.CreateTemp("", "sniproxy-goroutineleak-*.pprof")
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to create goroutine leak profile file")
 		return
@@ -77,7 +80,7 @@ func (g *goroutineLeakProfiler) Stop() {
 		logger.Error().Err(err).Msg("failed to write goroutine leak profile")
 		return
 	}
-	logger.Info().Int("leaked", n).Msgf("goroutine leak profile written to %s", g.path)
+	logger.Info().Int("leaked", n).Msgf("goroutine leak profile written to %s", f.Name())
 }
 
 // isLoopbackAddr reports whether a "host:port" bind address is restricted to
@@ -116,7 +119,7 @@ func enableProfile(profileType string) interface{ Stop() } {
 	case "goroutineleak":
 		// on shutdown, run leak detection and dump the stacks of every
 		// goroutine that can never become runnable again
-		return &goroutineLeakProfiler{path: filepath.Join(os.TempDir(), "goroutineleak.pprof")}
+		return &goroutineLeakProfiler{}
 	case "clock":
 		return profile.Start(profile.ClockProfile)
 	default:

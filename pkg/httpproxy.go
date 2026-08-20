@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -71,6 +72,55 @@ func RunHTTP(c *Config, bind string, l zerolog.Logger) {
 	}
 }
 
+// dstIsSelf reports whether a proxied destination points back at sniproxy
+// itself, at loopback, or into private address space, along with the address it
+// resolved to.
+//
+// An IP literal is checked directly. A hostname is resolved through the same
+// upstream the TLS path uses, so a name that resolves to 127.0.0.1 is caught
+// too. When no DNS client is configured there is nothing to resolve with, and
+// the destination is treated as external.
+func dstIsSelf(c *Config, hostPort string) (netip.Addr, bool) {
+	host := hostPort
+	if h, _, err := net.SplitHostPort(hostPort); err == nil {
+		host = h
+	}
+
+	if ip, err := netip.ParseAddr(host); err == nil {
+		return ip, isSelf(c, ip)
+	}
+
+	// localhost is special-cased because it usually resolves through the
+	// system, not through the configured upstream
+	if strings.EqualFold(host, "localhost") {
+		return netip.AddrFrom4([4]byte{127, 0, 0, 1}), true
+	}
+
+	if c.DNSClient.Resolver == nil {
+		return netip.Addr{}, false
+	}
+	ip, err := c.DNSClient.lookupDomain(host, c.PreferredVersion)
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	return ip, isSelf(c, ip)
+}
+
+// isManagementPort reports whether port belongs to one of sniproxy's own
+// diagnostic listeners. Those serve stack traces and runtime internals with no
+// authentication, so they must never be reachable through the proxy.
+func (c *Config) isManagementPort(port string) bool {
+	for _, bind := range []string{c.BindPprof, c.BindPrometheus} {
+		if bind == "" {
+			continue
+		}
+		if _, p, err := net.SplitHostPort(bind); err == nil && p == port {
+			return true
+		}
+	}
+	return false
+}
+
 func handle80(c *Config, l zerolog.Logger, transport *http.Transport) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c.ReceivedHTTP.Inc(1)
@@ -96,11 +146,26 @@ func handle80(c *Config, l zerolog.Logger, transport *http.Transport) http.Handl
 			http.Error(w, "Could not reach origin server", http.StatusForbidden)
 			return
 		}
-		// if the URL starts with the public IP, it needs to be skipped to avoid loops
-		if strings.HasPrefix(r.Host, c.PublicIPv4) || (c.PublicIPv6 != "" && strings.HasPrefix(r.Host, c.PublicIPv6)) {
-			l.Warn().Msg("someone is requesting HTTP to sniproxy itself, ignoring...")
-			http.Error(w, "Could not reach origin server", 404)
-			return
+		// Refuse to proxy back into sniproxy itself. This used to be a string
+		// prefix test against the configured public IP, which meant a Host of
+		// 127.0.0.1, or any private address, was proxied happily. That let a
+		// client reach sniproxy's own loopback-bound listeners through the
+		// proxy, so binding the pprof endpoint to loopback protected nothing.
+		// The TLS path has always run this check after resolving the SNI.
+		if dstIP, self := dstIsSelf(c, r.Host); self {
+			if !c.AllowConnToLocal {
+				l.Warn().Str("host", r.Host).Msg("refusing to proxy to sniproxy itself or a local address")
+				http.Error(w, "Could not reach origin server", 404)
+				return
+			}
+			// allow_conn_to_local opts into proxying private destinations, but
+			// never into sniproxy's own diagnostic listeners: they carry no
+			// authentication of their own.
+			if _, port, err := net.SplitHostPort(r.Host); err == nil && c.isManagementPort(port) {
+				l.Warn().Str("host", r.Host).Str("dst", dstIP.String()).Msg("refusing to proxy to sniproxy's own diagnostic listener")
+				http.Error(w, "Could not reach origin server", 404)
+				return
+			}
 		}
 
 		l.Info().Str("method", r.Method).Str("host", r.Host).Str("url", r.URL.String()).Msg("request received")

@@ -112,7 +112,9 @@ go tool pprof http://127.0.0.1:6060/debug/pprof/goroutineleak    # binary profil
 ```
 
 The rest of the standard `/debug/pprof/` handlers are on the same listener. Anyone who can reach
-that port can read stack traces and start expensive profiles, so bind it to loopback.
+that port can read stack traces and start expensive profiles, so bind it to loopback. The proxy
+refuses to forward requests to its own diagnostic listeners, so a loopback bind cannot be reached
+back through sniproxy itself.
 
 **As a metric.** Set `goroutine_leak_interval` (e.g. `15m`) and sniproxy checks periodically,
 publishing the count as the `goroutines.leaked` gauge and logging a warning when it is non-zero.
@@ -120,8 +122,8 @@ On the Prometheus endpoint that shows up as `sniproxy_<public_ipv4>_goroutines_l
 the same namespace/subsystem scheme as the other metrics. Each check forces a full GC, so keep the
 interval coarse.
 
-**On exit.** `sniproxy --prof goroutineleak` writes `goroutineleak.pprof` to the temp directory
-when the process shuts down.
+**On exit.** `sniproxy --prof goroutineleak` writes the profile when the process shuts down, into a
+private per-run temp directory whose path is logged.
 
 Detection is reachability based, so a goroutine parked on a primitive still reachable from a
 global, or from a running goroutine's locals, will not be reported even if nothing will ever

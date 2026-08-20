@@ -2,6 +2,7 @@ package sniproxy
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
 	"net/url"
 	"strconv"
@@ -91,7 +92,12 @@ type Config struct {
 	BindHTTPSListeners    []string `yaml:"-"` // compiled list of bind_https and bind_https_additional listen addresses
 	Interface             string   `yaml:"interface"`
 	BindPrometheus        string   `yaml:"bind_prometheus"`
+	BindPprof             string   `yaml:"bind_pprof"`
 	AllowConnToLocal      bool     `yaml:"allow_conn_to_local"`
+
+	// GoroutineLeakInterval enables the periodic goroutine leak check when
+	// non-zero. Each check forces a full GC, so keep it coarse.
+	GoroutineLeakInterval time.Duration `yaml:"goroutine_leak_interval"`
 
 	ACL []acl.ACL `yaml:"-"`
 
@@ -149,6 +155,16 @@ func (c *Config) Validate() error {
 	// Validate TLS configuration if TLS/QUIC DNS is enabled
 	if (c.BindDNSOverTLS != "" || c.BindDNSOverQuic != "") && (c.TLSCert == "" || c.TLSKey == "") {
 		return fmt.Errorf("TLS certificate and key are required for DNS over TLS/QUIC")
+	}
+
+	if c.BindPprof != "" {
+		if _, _, err := net.SplitHostPort(c.BindPprof); err != nil {
+			return fmt.Errorf("bind_pprof must be a host:port address: %w", err)
+		}
+	}
+
+	if c.GoroutineLeakInterval < 0 {
+		return fmt.Errorf("goroutine_leak_interval must not be negative")
 	}
 
 	return nil

@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"io"
 	"net"
-	"runtime"
-	"runtime/pprof"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,29 +15,123 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// checkGoroutineLeaks looks up the goroutineleak profile (available when built
-// with GOEXPERIMENT=goroutineleakprofile) and fails the test if any leaked
-// goroutines are detected. Skips gracefully when the experiment is not enabled.
+// requireLeakProfile skips the test unless the binary was built with
+// GOEXPERIMENT=goroutineleakprofile. A plain `go test ./...` does not set it,
+// so these checks only really run in the dedicated CI step.
+func requireLeakProfile(t *testing.T) {
+	t.Helper()
+	if !GoroutineLeakProfileAvailable() {
+		t.Skip("goroutineleak profile not compiled in; rebuild with GOEXPERIMENT=goroutineleakprofile")
+	}
+}
+
+// checkGoroutineLeaks fails the test if the runtime can prove any goroutine is
+// permanently blocked.
+//
+// Order matters here: writing the profile is what runs the leak-detecting GC
+// cycle. Profile.Count only reports the result of the most recent detection
+// run, so calling it first would read a stale count (zero, if nothing has ever
+// triggered detection) and quietly pass on a real leak.
 func checkGoroutineLeaks(t *testing.T) {
 	t.Helper()
+	requireLeakProfile(t)
 
-	// Give the GC a chance to identify unreachable primitives.
-	for range 5 {
-		runtime.GC()
-		time.Sleep(20 * time.Millisecond)
+	var buf bytes.Buffer
+	if _, err := WriteGoroutineLeakProfile(&buf, 1); err != nil {
+		t.Fatalf("goroutine leak detection failed: %v", err)
 	}
-
-	p := pprof.Lookup("goroutineleak")
-	if p == nil {
-		t.Skip("goroutineleak profile not available (build with GOEXPERIMENT=goroutineleakprofile)")
+	if n, stacks := unexpectedLeaks(buf.String()); n > 0 {
+		t.Errorf("%d leaked goroutine(s) detected:\n%s", n, stacks)
 	}
+}
 
-	if p.Count() > 0 {
-		var buf bytes.Buffer
-		if err := p.WriteTo(&buf, 1); err != nil {
-			t.Fatalf("failed to write goroutineleak profile: %v", err)
+// knownLeaks are leak sites these tests deliberately tolerate. Leaked
+// goroutines are never reclaimed, so anything listed here would otherwise fail
+// every check that runs after the leak is created.
+var knownLeaks = []string{
+	// routedns starts a Pipeline goroutine per DNS client which ranges over a
+	// request channel it never closes, and exposes no way to shut it down. So
+	// every rdns.NewDNSClient parks one goroutine for the life of the process.
+	// sniproxy builds its DNS client once at startup, which bounds this at one
+	// in production, but each NewDNSClient in a test adds another.
+	"routedns.(*Pipeline).start",
+	// planted on purpose by TestGoroutineLeakProfile_DetectsKnownLeak
+	"leakOneGoroutine",
+}
+
+// unexpectedLeaks parses a debug=1 goroutineleak profile and returns how many
+// leaked goroutines are not attributable to knownLeaks, along with their
+// stacks. The format is one record per distinct stack, separated by a blank
+// line, each starting with "<count> @ <pcs>".
+func unexpectedLeaks(profile string) (int, string) {
+	var (
+		total  int
+		stacks []string
+	)
+	for _, record := range strings.Split(profile, "\n\n") {
+		record = strings.TrimSpace(record)
+		if record == "" || strings.HasPrefix(record, "goroutineleak profile:") {
+			continue
 		}
-		t.Errorf("goroutine leaks detected:\n%s", buf.String())
+		if slices.ContainsFunc(knownLeaks, func(known string) bool {
+			return strings.Contains(record, known)
+		}) {
+			continue
+		}
+		count, _, ok := strings.Cut(record, " @ ")
+		if !ok {
+			continue
+		}
+		n, err := strconv.Atoi(count)
+		if err != nil {
+			continue
+		}
+		total += n
+		stacks = append(stacks, record)
+	}
+	return total, strings.Join(stacks, "\n\n")
+}
+
+// leakOneGoroutine parks a goroutine on a channel nothing else can ever
+// reference, which is exactly the shape the runtime is able to prove leaked.
+//
+//go:noinline
+func leakOneGoroutine() {
+	go func() {
+		<-make(chan struct{})
+	}()
+}
+
+// TestGoroutineLeakProfile_DetectsKnownLeak is the negative control for the
+// rest of this file: it plants a leak the runtime must be able to find. Without
+// it every other test here would still pass if detection silently stopped
+// working.
+func TestGoroutineLeakProfile_DetectsKnownLeak(t *testing.T) {
+	requireLeakProfile(t)
+
+	before, err := CountGoroutineLeaks()
+	if err != nil {
+		t.Fatalf("goroutine leak detection failed: %v", err)
+	}
+
+	leakOneGoroutine()
+
+	// The goroutine has to actually reach the blocked state before the runtime
+	// can classify it, and it is not scheduled synchronously, so retry rather
+	// than racing it on the first sample.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		after, err := CountGoroutineLeaks()
+		if err != nil {
+			t.Fatalf("goroutine leak detection failed: %v", err)
+		}
+		if after > before {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("deliberate leak went undetected: leak count stayed at %d", before)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
@@ -217,4 +312,35 @@ func TestProxyCopy_NoGoroutineLeaks(t *testing.T) {
 	}
 
 	checkGoroutineLeaks(t)
+}
+
+// TestUnexpectedLeaks covers the profile parsing itself. If this filter ever
+// silently returned zero, every leak check in this file would pass vacuously.
+func TestUnexpectedLeaks(t *testing.T) {
+	const profile = `goroutineleak profile: total 4
+
+2 @ 0x49370a 0x41e94e
+#	0xadc675	github.com/folbricht/routedns.(*Pipeline).start+0x115	/pipeline.go:87
+
+1 @ 0x49370a 0x41e94e
+#	0xbd13a4	github.com/mosajjal/sniproxy/v2/pkg.leakOneGoroutine.func1+0x24	/goroutineleak_test.go:49
+
+1 @ 0x49370a 0x41e94e
+#	0xbd13a4	github.com/mosajjal/sniproxy/v2/pkg.handleTLS.func2+0x24	/https.go:120
+`
+
+	n, stacks := unexpectedLeaks(profile)
+	if n != 1 {
+		t.Errorf("unexpected leak count: got %d, want 1", n)
+	}
+	if !strings.Contains(stacks, "handleTLS") {
+		t.Errorf("expected the handleTLS stack to be reported, got:\n%s", stacks)
+	}
+	if strings.Contains(stacks, "Pipeline") || strings.Contains(stacks, "leakOneGoroutine") {
+		t.Errorf("known leaks should have been filtered out, got:\n%s", stacks)
+	}
+
+	if n, _ := unexpectedLeaks("goroutineleak profile: total 0\n"); n != 0 {
+		t.Errorf("empty profile should report no leaks, got %d", n)
+	}
 }

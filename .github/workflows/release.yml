@@ -23,10 +23,13 @@ jobs:
           - goarch: "arm"
             goos: windows
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: wangyoucao577/go-release-action@master
         env:
           CGO_ENABLED: 0 # support alpine
+          # opt-in Go 1.26 experiments: runtime goroutine leak profile, and the
+          # v2 encoding/json implementation. Both are default-on in Go 1.27.
+          GOEXPERIMENT: goroutineleakprofile,jsonv2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           goos: ${{ matrix.goos }}

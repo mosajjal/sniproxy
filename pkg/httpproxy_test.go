@@ -121,3 +121,119 @@ func TestHandle80_LoopPrevention(t *testing.T) {
 func testLogger() zerolog.Logger {
 	return zerolog.Nop()
 }
+
+// testPprofBind is the diagnostic listener address used across these tests.
+const testPprofBind = "127.0.0.1:6060"
+
+// recordingTransport reports whether the proxy ever tried to dial out. A
+// blocked request must never reach the dial stage.
+func recordingTransport(dialed *bool) *http.Transport {
+	return &http.Transport{
+		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+			*dialed = true
+			return nil, io.EOF
+		},
+	}
+}
+
+// TestHandle80_RejectsSelfDestinations covers the case where a client points
+// the Host header back at sniproxy itself. Before this check the HTTP proxy
+// would happily fetch sniproxy's own loopback-bound listeners, so binding the
+// pprof endpoint to 127.0.0.1 gave no protection at all.
+func TestHandle80_RejectsSelfDestinations(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		host string
+	}{
+		{"loopback with port", testPprofBind},
+		{"loopback bare", "127.0.0.1"},
+		{"ipv6 loopback", "[::1]:6060"},
+		{"localhost by name", "localhost:6060"},
+		{"private rfc1918", "192.168.1.10:8080"},
+		{"private 10/8", "10.0.0.5"},
+		{"unspecified", "0.0.0.0:6060"},
+		{"own public ip", "203.0.113.1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newTestConfig()
+			c.BindPprof = testPprofBind
+
+			dialed := false
+			handler := handle80(c, testLogger(), recordingTransport(&dialed))
+
+			req := httptest.NewRequest("GET", "http://"+tc.host+"/debug/pprof/cmdline", nil)
+			req.Host = tc.host
+			w := httptest.NewRecorder()
+			handler(w, req)
+
+			resp := w.Result()
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != 404 {
+				t.Errorf("Host %q: expected 404, got %d", tc.host, resp.StatusCode)
+			}
+			if dialed {
+				t.Errorf("Host %q: proxy dialed the destination; it should have been refused first", tc.host)
+			}
+		})
+	}
+}
+
+// TestHandle80_AllowConnToLocalStillBlocksManagementPorts checks that opting
+// into proxying private destinations does not also expose sniproxy's own
+// diagnostic listeners, which have no authentication of their own.
+func TestHandle80_AllowConnToLocalStillBlocksManagementPorts(t *testing.T) {
+	c := newTestConfig()
+	c.AllowConnToLocal = true
+	c.BindPprof = testPprofBind
+	c.BindPrometheus = "127.0.0.1:8080"
+
+	for _, tc := range []struct {
+		name       string
+		host       string
+		wantDialed bool
+	}{
+		{"pprof port is refused", testPprofBind, false},
+		{"prometheus port is refused", "127.0.0.1:8080", false},
+		{"other local port is allowed", "192.168.1.10:9999", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dialed := false
+			handler := handle80(c, testLogger(), recordingTransport(&dialed))
+
+			req := httptest.NewRequest("GET", "http://"+tc.host+"/", nil)
+			req.Host = tc.host
+			w := httptest.NewRecorder()
+			handler(w, req)
+
+			resp := w.Result()
+			defer func() { _ = resp.Body.Close() }()
+			if dialed != tc.wantDialed {
+				t.Errorf("Host %q: dialed=%v, want %v", tc.host, dialed, tc.wantDialed)
+			}
+			if !tc.wantDialed && resp.StatusCode != 404 {
+				t.Errorf("Host %q: expected 404, got %d", tc.host, resp.StatusCode)
+			}
+		})
+	}
+}
+
+func TestIsManagementPort(t *testing.T) {
+	c := &Config{BindPprof: testPprofBind, BindPrometheus: "0.0.0.0:9090"}
+	for port, want := range map[string]bool{
+		"6060": true,
+		"9090": true,
+		"80":   false,
+		"443":  false,
+		"":     false,
+	} {
+		if got := c.isManagementPort(port); got != want {
+			t.Errorf("isManagementPort(%q) = %v, want %v", port, got, want)
+		}
+	}
+
+	// nothing configured means nothing to protect
+	empty := &Config{}
+	if empty.isManagementPort("6060") {
+		t.Error("isManagementPort should be false when no diagnostic listeners are configured")
+	}
+}

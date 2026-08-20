@@ -34,6 +34,21 @@ general:
   bind_https_additional:
   # Enable prometheus endpoint on IP:PORT. example: 127.0.0.1:8080. Always exposes /metrics and only supports HTTP
   bind_prometheus:
+  # Enable the pprof debug endpoint on IP:PORT. example: 127.0.0.1:6060. empty disables it.
+  # exposes the standard /debug/pprof/ handlers, plus the goroutine leak profile at
+  # /debug/pprof/goroutineleak (add ?debug=1 for readable stacks). anyone who can reach this port can
+  # read stack traces and trigger expensive profiles, so bind it to loopback.
+  bind_pprof:
+  # Periodically run goroutine leak detection and publish the count as the goroutines.leaked
+  # gauge (sniproxy_<public_ipv4>_goroutines_leaked in prometheus), logging a warning when it is
+  # above zero.
+  # empty or 0s disables it. example: 15m
+  # every check forces a full GC, so keep this coarse. use bind_pprof to get the stacks.
+  #
+  # NOTE: the leak profile only exists if sniproxy was built with
+  # GOEXPERIMENT=goroutineleakprofile (the release binaries and container image are).
+  # without it sniproxy warns at startup and the leak options do nothing.
+  goroutine_leak_interval: 0s
   # Interface used for outbound TLS connections. uses OS prefered one if empty
   interface:
   # Preferred ip version for outgoing connections. choises: ipv4 (or 4), ipv6 (or 6), ipv4only, ipv6only, any. empty (or 0) means any.

@@ -10,7 +10,7 @@ go build -v ./cmd/sniproxy/
 go test -v ./...
 ```
 
-Needs Go 1.24+ and git.
+Needs Go 1.26+ and git.
 
 ## Making changes
 

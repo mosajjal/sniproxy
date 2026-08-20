@@ -2,9 +2,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
+	nethttppprof "net/http/pprof"
 	"net/netip"
 	"os"
 	"os/signal"
@@ -51,6 +53,48 @@ var defaultConfig []byte
 var nocolorLog = strings.ToLower(os.Getenv("NO_COLOR")) == "true"
 var logger = zerolog.New(os.Stderr).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339, NoColor: nocolorLog})
 
+// goroutineLeakProfiler writes a goroutineleak profile when sniproxy exits.
+// github.com/pkg/profile has no goroutineleak mode, so this reimplements the
+// same Stop() shape directly on top of runtime/pprof.
+type goroutineLeakProfiler struct {
+	path string
+}
+
+func (g *goroutineLeakProfiler) Stop() {
+	f, err := os.Create(g.path)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to create goroutine leak profile file")
+		return
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			logger.Error().Err(err).Msg("failed to close goroutine leak profile file")
+		}
+	}()
+
+	n, err := sniproxy.WriteGoroutineLeakProfile(f, 0)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to write goroutine leak profile")
+		return
+	}
+	logger.Info().Int("leaked", n).Msgf("goroutine leak profile written to %s", g.path)
+}
+
+// isLoopbackAddr reports whether a "host:port" bind address is restricted to
+// the loopback interface. An empty host means every interface, and a name other
+// than localhost could resolve anywhere, so both count as not loopback.
+func isLoopbackAddr(bind string) bool {
+	host, _, err := net.SplitHostPort(bind)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.IsLoopback()
+}
+
 func enableProfile(profileType string) interface{ Stop() } {
 	switch profileType {
 	case "":
@@ -69,6 +113,10 @@ func enableProfile(profileType string) interface{ Stop() } {
 		return profile.Start(profile.ThreadcreationProfile)
 	case "goroutine":
 		return profile.Start(profile.GoroutineProfile)
+	case "goroutineleak":
+		// on shutdown, run leak detection and dump the stacks of every
+		// goroutine that can never become runnable again
+		return &goroutineLeakProfiler{path: filepath.Join(os.TempDir(), "goroutineleak.pprof")}
 	case "clock":
 		return profile.Start(profile.ClockProfile)
 	default:
@@ -87,7 +135,7 @@ func main() {
 	flags := cmd.Flags()
 	config := flags.StringP("config", "c", "", "path to YAML configuration file")
 	_ = flags.Bool("defaultconfig", false, "write the default config yaml file to stdout")
-	prof := flags.String("prof", "", "enable profiling. can be one of: [cpu, mem, block, mutex, trace, threadcreate, goroutine, clock]")
+	prof := flags.String("prof", "", "enable profiling. can be one of: [cpu, mem, block, mutex, trace, threadcreate, goroutine, goroutineleak, clock]")
 	_ = flags.BoolP("version", "v", false, "show version info and exit")
 	if err := cmd.Execute(); err != nil {
 		logger.Error().Msgf("failed to execute command: %s", err)
@@ -203,6 +251,8 @@ func main() {
 	}
 
 	c.BindPrometheus = generalConfig.String("prometheus")
+	c.BindPprof = generalConfig.String("bind_pprof")
+	c.GoroutineLeakInterval = generalConfig.Duration("goroutine_leak_interval")
 	c.AllowConnToLocal = generalConfig.Bool("allow_conn_to_local")
 
 	// Validate configuration before proceeding
@@ -242,6 +292,59 @@ func main() {
 				logger.Error().Msgf("%s", err)
 			}
 		}()
+	}
+
+	// runtime context, canceled once a shutdown signal arrives
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Fail loudly at startup rather than at the first tick (the watcher) or at
+	// exit (--prof), which is where the missing profile would otherwise surface.
+	if (c.GoroutineLeakInterval > 0 || *prof == "goroutineleak") && !sniproxy.GoroutineLeakProfileAvailable() {
+		logger.Warn().Msgf(
+			"goroutine leak detection was requested, but this binary was built without it. rebuild with GOEXPERIMENT=%s",
+			sniproxy.GoroutineLeakExperiment,
+		)
+	}
+
+	// pprof server. this is deliberately a dedicated mux rather than the
+	// DefaultServeMux that importing net/http/pprof normally hijacks, so the
+	// debug handlers can never leak onto the metrics listener.
+	if c.BindPprof != "" {
+		if !isLoopbackAddr(c.BindPprof) {
+			logger.Warn().Msgf("pprof is bound to %s, which is not loopback. it exposes stack traces and lets anyone who can reach it trigger expensive profiles", c.BindPprof)
+		}
+
+		mux := http.NewServeMux()
+		// Index serves every named profile at /debug/pprof/<name>, which
+		// includes goroutineleak
+		mux.HandleFunc("/debug/pprof/", nethttppprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", nethttppprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", nethttppprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", nethttppprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", nethttppprof.Trace)
+
+		pprofServer := &http.Server{
+			Addr:    c.BindPprof,
+			Handler: mux,
+			// no write timeout on purpose: CPU and trace profiles stream for
+			// 30s or longer by default
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		logger.Info().Str("address", c.BindPprof).Msgf("starting pprof server. goroutine leaks: http://%s/debug/pprof/%s?debug=1", c.BindPprof, sniproxy.GoroutineLeakProfile)
+		go func() {
+			if err := pprofServer.ListenAndServe(); err != nil {
+				logger.Error().Msgf("%s", err)
+			}
+		}()
+	}
+
+	// periodic goroutine leak detection. off unless an interval is configured,
+	// because every check forces a full GC.
+	if c.GoroutineLeakInterval > 0 {
+		leaked := metrics.GetOrRegisterGauge("goroutines.leaked", metrics.DefaultRegistry)
+		logger.Info().Msgf("goroutine leak detection enabled, checking every %s", c.GoroutineLeakInterval)
+		go sniproxy.WatchGoroutineLeaks(ctx, c.GoroutineLeakInterval, leaked, logger)
 	}
 
 	// generate self-signed certificate if not provided.
@@ -324,6 +427,7 @@ func main() {
 
 	sig := <-sigChan
 	logger.Info().Msgf("received signal %v, shutting down gracefully...", sig)
+	cancel()
 
 	// Stop ACL refresh goroutines
 	acl.StopACLs(c.ACL)

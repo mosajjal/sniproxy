@@ -32,6 +32,11 @@ jobs:
           GOEXPERIMENT: goroutineleakprofile,jsonv2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # must stay on the Go version whose experiments are named in the env
+          # above. This action installs the latest Go by default, and 1.27
+          # deleted the goroutineleakprofile experiment, so an unpinned build
+          # dies with "unknown GOEXPERIMENT goroutineleakprofile".
+          goversion: "1.26"
           goos: ${{ matrix.goos }}
           goarch: ${{ matrix.goarch }}
           project_path: "./cmd/sniproxy"

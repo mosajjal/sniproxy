@@ -1,6 +1,7 @@
 package sniproxy
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -15,10 +16,10 @@ import (
 )
 
 const (
-	// TLSClientHelloBufferSize is the buffer size for reading TLS Client Hello
-	// 2048 should be enough for a TLS Client Hello packet. But it could become
-	// problematic if tcp connection is fragmented or too big
-	TLSClientHelloBufferSize = 2048
+	// TLSClientHelloBufferSize is the buffer size for reading a full TLS record
+	// containing the ClientHello. TLS record payloads can be up to 16KB, plus
+	// the 5-byte TLS record header.
+	TLSClientHelloBufferSize = 16*1024 + 5
 
 	// tlsReadTimeout is the deadline for reading the TLS ClientHello
 	tlsReadTimeout = 10 * time.Second
@@ -58,6 +59,62 @@ func isSelf(c *Config, ip netip.Addr) bool {
 	return false
 }
 
+func readFullTLSRecord(conn net.Conn, buf []byte) (int, error) {
+	if len(buf) < 5 {
+		return 0, fmt.Errorf("buffer too small for TLS header")
+	}
+
+	total := 0
+
+	// Read TLS record header (5 bytes)
+	for total < 5 {
+		n, err := conn.Read(buf[total:5])
+		if err != nil {
+			return total, err
+		}
+		if n == 0 {
+			return total, io.ErrNoProgress
+		}
+		total += n
+	}
+
+	// TLS record type: 0x16 = Handshake
+	if buf[0] != 0x16 {
+		return total, fmt.Errorf("not a TLS handshake record: type=%d", buf[0])
+	}
+
+	// TLS version: major must be 0x03 (TLS 1.0–1.3 all use this)
+	if buf[1] != 0x03 {
+		return total, fmt.Errorf("invalid TLS version: %d.%d", buf[1], buf[2])
+	}
+
+	// Parse record length (bytes 3-4)
+	recordLen := int(buf[3])<<8 | int(buf[4])
+	fullLen := 5 + recordLen
+
+	if recordLen == 0 {
+		return total, fmt.Errorf("empty TLS record")
+	}
+
+	if fullLen > len(buf) {
+		return total, fmt.Errorf("TLS record too large: %d > %d", fullLen, len(buf))
+	}
+
+	// Read the rest of the record
+	for total < fullLen {
+		n, err := conn.Read(buf[total:fullLen])
+		if err != nil {
+			return total, err
+		}
+		if n == 0 {
+			return total, io.ErrNoProgress
+		}
+		total += n
+	}
+
+	return total, nil
+}
+
 // handleTLS handles the incoming TLS connection
 func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 	c.ReceivedHTTPS.Inc(1)
@@ -72,11 +129,13 @@ func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 		l.Error().Err(err).Msg("failed to set read deadline")
 		return err
 	}
-	n, err := conn.Read(incoming)
+
+	n, err := readFullTLSRecord(conn, incoming)
 	if err != nil {
-		l.Error().Err(err).Msg("failed to read from connection")
+		l.Error().Err(err).Msg("failed to read full TLS record")
 		return err
 	}
+
 	// Clear the read deadline for proxied data
 	if err := conn.SetReadDeadline(time.Time{}); err != nil {
 		l.Debug().Err(err).Msg("failed to clear read deadline")

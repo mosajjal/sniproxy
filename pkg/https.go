@@ -1,6 +1,7 @@
 package sniproxy
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -15,10 +16,17 @@ import (
 )
 
 const (
-	// TLSClientHelloBufferSize is the buffer size for reading TLS Client Hello
-	// 2048 should be enough for a TLS Client Hello packet. But it could become
-	// problematic if tcp connection is fragmented or too big
-	TLSClientHelloBufferSize = 2048
+	// tlsRecordHeaderLength is the TLS record header: type(1) + version(2) + length(2)
+	tlsRecordHeaderLength = 5
+
+	// tlsMaxRecordLength is the maximum TLS plaintext record payload (RFC 8446 5.1)
+	tlsMaxRecordLength = 1 << 14
+
+	// tlsRecordTypeHandshake is the TLS content type of a ClientHello record
+	tlsRecordTypeHandshake = 0x16
+
+	// TLSClientHelloBufferSize fits one full TLS record: header + max payload
+	TLSClientHelloBufferSize = tlsRecordHeaderLength + tlsMaxRecordLength
 
 	// tlsReadTimeout is the deadline for reading the TLS ClientHello
 	tlsReadTimeout = 10 * time.Second
@@ -72,7 +80,7 @@ func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 		l.Error().Err(err).Msg("failed to set read deadline")
 		return err
 	}
-	n, err := conn.Read(incoming)
+	n, err := readClientHello(conn, incoming)
 	if err != nil {
 		l.Error().Err(err).Msg("failed to read from connection")
 		return err
@@ -167,6 +175,30 @@ func handleTLS(c *Config, conn net.Conn, l zerolog.Logger) error {
 	<-errc
 	<-errc
 	return nil
+}
+
+// readClientHello reads the first TLS record from conn into buf.
+// A ClientHello may span several TCP segments (e.g. post-quantum key
+// shares push it past one MSS), so read the 5-byte header, then the
+// exact payload length it announces.
+func readClientHello(conn net.Conn, buf []byte) (int, error) {
+	if _, err := io.ReadFull(conn, buf[:tlsRecordHeaderLength]); err != nil {
+		return 0, err
+	}
+	if buf[0] != tlsRecordTypeHandshake {
+		return 0, fmt.Errorf("not a TLS handshake record: type %#x", buf[0])
+	}
+
+	length := lengthFromData(buf, 3)
+	n := tlsRecordHeaderLength + length
+	if length == 0 || n > len(buf) {
+		return 0, fmt.Errorf("invalid TLS record length %d", length)
+	}
+
+	if _, err := io.ReadFull(conn, buf[tlsRecordHeaderLength:n]); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 func proxyCopy(errc chan<- error, dst, src net.Conn) {

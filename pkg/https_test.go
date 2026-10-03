@@ -1,7 +1,10 @@
 package sniproxy
 
 import (
+	"bytes"
+	"net"
 	"net/netip"
+	"strconv"
 	"testing"
 )
 
@@ -56,4 +59,62 @@ func TestGetPortFromConn(t *testing.T) {
 	// Test with a real listener to get a valid conn
 	// For unit test simplicity, we just verify the function handles edge cases
 	// getPortFromConn returns 0 on error, which is tested indirectly
+}
+
+func TestReadClientHello_Split(t *testing.T) {
+	hello := buildClientHello("example.com")
+
+	// Split offsets from issue #210: inside the record header and inside the body.
+	for _, split := range []int{0, 3, 40} {
+		t.Run(strconv.Itoa(split), func(t *testing.T) {
+			client, server := net.Pipe()
+			defer func() { _ = client.Close() }()
+			defer func() { _ = server.Close() }()
+
+			// net.Pipe delivers each Write separately, like TCP segments.
+			go func() {
+				if split > 0 {
+					_, _ = client.Write(hello[:split])
+				}
+				_, _ = client.Write(hello[split:])
+			}()
+
+			buf := make([]byte, TLSClientHelloBufferSize)
+			n, err := readClientHello(server, buf)
+			if err != nil {
+				t.Fatalf("readClientHello() error = %v", err)
+			}
+			if !bytes.Equal(buf[:n], hello) {
+				t.Fatalf("got %d bytes, want %d", n, len(hello))
+			}
+
+			sni, err := GetHostname(buf[:n])
+			if err != nil || sni != "example.com" {
+				t.Fatalf("GetHostname() = %q, %v", sni, err)
+			}
+		})
+	}
+}
+
+func TestReadClientHello_Invalid(t *testing.T) {
+	tests := map[string][]byte{
+		"not handshake": {0x17, 0x03, 0x01, 0x00, 0x05},
+		"zero length":   {0x16, 0x03, 0x01, 0x00, 0x00},
+		"too long":      {0x16, 0x03, 0x01, 0xff, 0xff},
+	}
+
+	for name, header := range tests {
+		t.Run(name, func(t *testing.T) {
+			client, server := net.Pipe()
+			defer func() { _ = client.Close() }()
+			defer func() { _ = server.Close() }()
+
+			go func() { _, _ = client.Write(header) }()
+
+			buf := make([]byte, TLSClientHelloBufferSize)
+			if _, err := readClientHello(server, buf); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
 }

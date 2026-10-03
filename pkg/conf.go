@@ -152,9 +152,9 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("at least one public IP (IPv4 or IPv6) is required")
 	}
 
-	// Validate TLS configuration if TLS/QUIC DNS is enabled
-	if (c.BindDNSOverTLS != "" || c.BindDNSOverQuic != "") && (c.TLSCert == "" || c.TLSKey == "") {
-		return fmt.Errorf("TLS certificate and key are required for DNS over TLS/QUIC")
+	// Cert and key go together. With neither, a self-signed pair is generated.
+	if (c.TLSCert == "") != (c.TLSKey == "") {
+		return fmt.Errorf("tls_cert and tls_key must be set together")
 	}
 
 	if c.BindPprof != "" {

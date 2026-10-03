@@ -23,6 +23,7 @@ general:
   # Path to the certificate for DoH, DoT and DoQ. eg: /tmp/mycert.pem
   tls_cert:
   # Path to the certificate key for DoH, DoT and DoQ. eg: /tmp/mycert.key
+  # leave both tls_cert and tls_key empty to generate a self-signed pair at startup
   tls_key:
   # HTTP Port to listen on. Should remain 80 in most cases. use :80 to listen on both IPv4 and IPv6
   bind_http: "0.0.0.0:80"

@@ -235,9 +235,23 @@ func TestConfigValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			// a self-signed cert is generated at startup
 			name: "TLS DNS without cert",
 			modify: func(c *Config) {
 				c.BindDNSOverTLS = "0.0.0.0:853"
+			},
+		},
+		{
+			name: "QUIC DNS without cert",
+			modify: func(c *Config) {
+				c.BindDNSOverQuic = "0.0.0.0:8853"
+			},
+		},
+		{
+			name: "TLS DNS with cert but no key",
+			modify: func(c *Config) {
+				c.BindDNSOverTLS = "0.0.0.0:853"
+				c.TLSCert = "/path/to/cert"
 			},
 			wantErr: true,
 		},

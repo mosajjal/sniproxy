@@ -98,6 +98,42 @@ func isLoopbackAddr(bind string) bool {
 	return err == nil && ip.IsLoopback()
 }
 
+// portList reads ports given as a YAML list or a comma-separated
+// string, e.g. [8080, "8081-8083"] or "8080,8081-8083".
+func portList(k *koanf.Koanf, key string) []string {
+	if ports := k.Strings(key); len(ports) > 0 {
+		return ports
+	}
+
+	ports := strings.Split(k.String(key), ",")
+	out := []string{}
+	for _, p := range ports {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// publicIP returns the configured address, or detects it when empty.
+// A failed detection returns "" so single-stack hosts still start.
+func publicIP(configured string, detect func() (string, error), family string) string {
+	if configured != "" {
+		logger.Info().Msgf("public %s (manually provided): %s", family, configured)
+		return configured
+	}
+
+	ip, err := detect()
+	if err != nil {
+		logger.Warn().Msgf("failed to get public %s, disabling it: %s", family, err)
+		return ""
+	}
+	logger.Info().Msgf("public %s (automatically determined): %s", family, ip)
+	return ip
+}
+
 func enableProfile(profileType string) interface{ Stop() } {
 	switch profileType {
 	case "":
@@ -211,39 +247,19 @@ func main() {
 	c.TLSCert = generalConfig.String("tls_cert")
 	c.TLSKey = generalConfig.String("tls_key")
 	c.BindHTTP = generalConfig.String("bind_http")
-	c.BindHTTPAdditional = generalConfig.Strings("bind_http_additional")
+	c.BindHTTPAdditional = portList(generalConfig, "bind_http_additional")
 	c.BindHTTPS = generalConfig.String("bind_https")
-	c.BindHTTPSAdditional = generalConfig.Strings("bind_https_additional")
+	c.BindHTTPSAdditional = portList(generalConfig, "bind_https_additional")
 	c.Interface = generalConfig.String("interface")
 	c.PreferredVersion = generalConfig.String("preferred_version")
 
 	// if preferred version is ipv6only, we don't need to check for ipv4 public ip
 	if c.PreferredVersion != "ipv6only" {
-		c.PublicIPv4 = generalConfig.String("public_ipv4")
-		if c.PublicIPv4 == "" {
-			var err error
-			c.PublicIPv4, err = sniproxy.GetPublicIPv4()
-			if err != nil {
-				logger.Fatal().Msgf("failed to get public IPv4, while ipv4 is enabled in preferred_version: %s", err)
-			}
-			logger.Info().Msgf("public IPv4 (automatically determined): %s", c.PublicIPv4)
-		} else {
-			logger.Info().Msgf("public IPv4 (manually provided): %s", c.PublicIPv4)
-		}
+		c.PublicIPv4 = publicIP(generalConfig.String("public_ipv4"), sniproxy.GetPublicIPv4, "IPv4")
 	}
 	// if preferred version is ipv4only, we don't need to check for ipv6 public ip
 	if c.PreferredVersion != "ipv4only" {
-		c.PublicIPv6 = generalConfig.String("public_ipv6")
-		if c.PublicIPv6 == "" {
-			var err error
-			c.PublicIPv6, err = sniproxy.GetPublicIPv6()
-			if err != nil {
-				logger.Fatal().Msgf("failed to get public IPv6, while ipv6 is enabled in preferred_version: %s", err)
-			}
-			logger.Info().Msgf("public IPv6 (automatically determined): %s", c.PublicIPv6)
-		} else {
-			logger.Info().Msgf("public IPv6 (manually provided): %s", c.PublicIPv6)
-		}
+		c.PublicIPv6 = publicIP(generalConfig.String("public_ipv6"), sniproxy.GetPublicIPv6, "IPv6")
 	}
 
 	// in any case, at least one public IP address is needed to run the server. if both are empty, we can't proceed

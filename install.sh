@@ -30,11 +30,15 @@ fail() {
 }
 
 # Function to get the latest release from GitHub
+# follows the github.com/<repo>/releases/latest redirect, e.g. .../releases/tag/v2.4.1 -> v2.4.1
+# the web redirect avoids the API's 60 requests/hour limit, which shared VPS IPs often exhaust
 get_latest_release() {
     log "Getting latest release for $1"
-    curl --silent "https://api.github.com/repos/$1/releases/latest" | # Get latest release from GitHub api
-        grep '"tag_name":' |                                          # Get tag line
-        sed -E 's/.*"([^"]+)".*/\1/'                                  # Pluck JSON value
+    local url
+    url=$(curl --silent --fail -L -o /dev/null -w '%{url_effective}' "https://github.com/$1/releases/latest") || return
+    case "$url" in
+    */releases/tag/*) echo "${url##*/}" ;;
+    esac
 }
 
 # Function to download a file with retries
@@ -115,7 +119,7 @@ yqPath="/opt/sniproxy/yq"
 log "Fetching latest release information..."
 latest_tag=$(get_latest_release "mosajjal/sniproxy")
 if [ -z "$latest_tag" ]; then
-    fail "Could not determine the latest release tag from the GitHub API"
+    fail "Could not determine the latest release tag. check that github.com is reachable from this host"
 fi
 success "Latest release tag: $latest_tag"
 download_url="https://github.com/mosajjal/sniproxy/releases/download/$latest_tag/sniproxy-$latest_tag-$platform.tar.gz"
@@ -138,8 +142,11 @@ chmod +x $execCommand || fail "Failed to make $execCommand executable"
 # download yq
 log "Downloading yq..."
 yq_latest_tag=$(get_latest_release "mikefarah/yq")
+if [ -z "$yq_latest_tag" ]; then
+    fail "Could not determine the latest yq release tag"
+fi
 success "Latest yq release tag: $yq_latest_tag"
-yq_download_url="https://github.com/mikefarah/yq/releases/download/$yq_latest_tag/yq_linux_amd64"
+yq_download_url="https://github.com/mikefarah/yq/releases/download/$yq_latest_tag/yq_${platform/-/_}"
 log "URL: $yq_download_url"
 download_file "$yq_download_url" "$yqPath"
 
@@ -199,7 +206,7 @@ read domainlist
 
 # if domainslist is not empty, there should be a --domainListPath argument added to sniproxy execute command
 if [ -n "$domainlist" ]; then
-    $yqPath -i '.acl.domain.enabled = true, .acl.domain.path = '"$domainlist" $configPath
+    domainlist="$domainlist" $yqPath -i '.acl.domain.enabled = true | .acl.domain.path = strenv(domainlist)' $configPath
 fi
 
 # ask if DNS over TCP should be enabled
@@ -233,11 +240,11 @@ if [ "$dnsOverTLS" = "y" ] || [ "$dnsOverQUIC" = "y" ]; then
     echo "Enter the path to the key file, if you don't have one, press Enter to use a self-signed certificate"
     read keyPath
 
-    # if any of the paths are empty, omit both arguments and print a warning for self-signed certificates
+    # if any of the paths are empty, leave both unset: sniproxy generates a self-signed pair at startup
     if [ -z "$certPath" ] || [ -z "$keyPath" ]; then
-        echo "WARNING: Using self-signed certificates"
+        warn "Using a self-signed certificate"
     else
-        $yqPath -i '.general.tls_cert = "$certPath", .general.tls_key = "$keyPath"' $configPath
+        certPath="$certPath" keyPath="$keyPath" $yqPath -i '.general.tls_cert = strenv(certPath) | .general.tls_key = strenv(keyPath)' $configPath
     fi
 fi
 

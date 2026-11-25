@@ -18,14 +18,21 @@ var passthruRequestHeaderKeys = [...]string{
 	"Accept-Encoding",
 	"Accept-Language",
 	"Cache-Control",
+	"Content-Length",
+	"Content-Type",
 	"Cookie",
+	"Range",
 	"Referer",
 	"User-Agent",
 }
 
 var passthruResponseHeaderKeys = [...]string{
+	"Accept-Ranges",
+	"Content-Disposition",
 	"Content-Encoding",
 	"Content-Language",
+	"Content-Length",
+	"Content-Range",
 	"Content-Type",
 	"Cache-Control",
 	"Date",
@@ -34,6 +41,7 @@ var passthruResponseHeaderKeys = [...]string{
 	"Last-Modified",
 	"Location",
 	"Server",
+	"Set-Cookie",
 	"Vary",
 }
 
